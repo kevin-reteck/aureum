@@ -1,7 +1,7 @@
 const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
 const CTX_KEY = "aureum.contexte";
-const TABS = ["galerie", "extensions", "etb", "cotes", "favoris"];
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris"];
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
 const ICONIC_IDS = ["swsh7-215", "base1-4", "base1-2", "base1-15", "base1-10", "base1-6", "sv03.5-205", "base1-58"];
@@ -69,6 +69,14 @@ const state = {
   sealedSort: "recent",
   sealedQuery: "",
   sealedPage: 1,
+  univers: null,
+  universAsOf: "",
+  universLoading: false,
+  universError: "",
+  universKind: "tous",
+  universSort: "ancien",
+  universQuery: "",
+  universPage: 1,
 };
 
 function esc(value) {
@@ -934,12 +942,172 @@ async function loadSealed() {
   }
 }
 
+const UNIVERS_KINDS = [
+  ["tous", "Tous"],
+  ["jeu", "Jeux"],
+  ["pack", "Packs"],
+  ["peluche", "Peluches"],
+  ["figurine", "Figurines"],
+  ["jouet", "Jouets"],
+];
+
+function universLabel(kind) {
+  return { jeu: "Jeu", pack: "Pack", peluche: "Peluche", figurine: "Figurine", jouet: "Jouet" }[kind] || "Univers";
+}
+
+function releasedLabel(value) {
+  if (!value) return "";
+  if (/^\d{4}$/.test(value)) return value;
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split("-").map(Number);
+    return new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric" }).format(new Date(year, month - 1, 1));
+  }
+  return formatDay(`${value}T12:00:00`);
+}
+
+function universRows() {
+  const q = state.universQuery.trim().toLowerCase();
+  let rows = Array.isArray(state.univers) ? state.univers : [];
+  if (state.universKind !== "tous") rows = rows.filter((item) => item.kind === state.universKind);
+  if (q) rows = rows.filter((item) => `${item.name} ${item.set}`.toLowerCase().includes(q));
+  const copy = rows.slice();
+  const key = (item) => item.released || "9999";
+  if (state.universSort === "nom") copy.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  else if (state.universSort === "cote") copy.sort((a, b) => (b.usd ?? -1) - (a.usd ?? -1));
+  else if (state.universSort === "recent") copy.sort((a, b) => key(b).localeCompare(key(a)) || a.name.localeCompare(b.name, "fr"));
+  else copy.sort((a, b) => key(a).localeCompare(key(b)) || a.name.localeCompare(b.name, "fr"));
+  return copy;
+}
+
+function universStatus() {
+  const total = universRows().length;
+  if (!total) return "Aucun résultat pour ce filtre.";
+  const shown = Math.min(state.universPage * PAGE_SIZE, total);
+  return `${shown} sur ${total}. Les boosters sont cotés en dollars TCGPlayer. Le reste est recensé sans cote unitaire.`;
+}
+
+function universTiles() {
+  const rows = universRows().slice(0, state.universPage * PAGE_SIZE);
+  if (!rows.length) return `<p class="note">Aucun résultat pour ce filtre.</p>`;
+  return rows.map((item) => {
+    const bits = [universLabel(item.kind)];
+    if (item.set) bits.push(item.set);
+    const day = releasedLabel(item.released);
+    if (day) bits.push(day);
+    const price = typeof item.usd === "number"
+      ? `<span class="price">${esc(usdFmt.format(item.usd))}</span>`
+      : `<span class="price-missing">Cote indisponible</span>`;
+    const art = /^\d+$/.test(String(item.id))
+      ? `<img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" loading="lazy" decoding="async">`
+      : `<span class="monogram" data-label="${esc(initials(item.name))}">${esc(initials(item.name))}</span>`;
+    return `
+      <article class="tile">
+        <div class="tile-hit">
+          <span class="art is-box" data-label="${esc(universLabel(item.kind))}">${art}</span>
+          <span class="tile-name">${esc(item.name)}</span>
+          <span class="tile-meta">${esc(bits.join(" · "))}</span>
+          <span class="price-line">${price}</span>
+        </div>
+      </article>`;
+  }).join("");
+}
+
+function universMore() {
+  if (state.universPage * PAGE_SIZE >= universRows().length) return "";
+  return `<button class="btn" type="button" data-univers="more">Afficher les suivantes</button>`;
+}
+
+function paintUnivers() {
+  const grid = document.getElementById("univers-grid");
+  const status = document.getElementById("univers-status");
+  const foot = document.getElementById("univers-foot");
+  if (!grid || !status || !foot) {
+    render();
+    return;
+  }
+  grid.innerHTML = universTiles();
+  status.textContent = universStatus();
+  foot.innerHTML = universMore();
+}
+
+function universHTML() {
+  if (!state.univers) {
+    const note = state.universError
+      ? `${esc(state.universError)} <button class="btn" type="button" data-action="univers-retry">Réessayer</button>`
+      : "Ouverture de l'univers…";
+    return `
+      <section class="panel">
+        <header class="section-head">
+          <div>
+            <p class="kicker">Depuis 1996</p>
+            <h2>Jeux, packs et jouets</h2>
+          </div>
+        </header>
+        <p class="note">${note}</p>
+      </section>`;
+  }
+  const counts = { tous: state.univers.length, jeu: 0, pack: 0, peluche: 0, figurine: 0, jouet: 0 };
+  state.univers.forEach((item) => {
+    if (counts[item.kind] != null) counts[item.kind] += 1;
+  });
+  const filters = UNIVERS_KINDS.map(([id, label]) => `
+    <button type="button" data-univers="kind" data-kind="${id}" aria-pressed="${state.universKind === id ? "true" : "false"}">${label} ${counts[id]}</button>`).join("");
+  return `
+    <section class="panel" id="univers">
+      <header class="section-head">
+        <div>
+          <p class="kicker">Depuis 1996</p>
+          <h2>Jeux, packs et jouets</h2>
+        </div>
+        <p class="lede" id="univers-status">${esc(universStatus())}</p>
+      </header>
+      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines et jouets sont les grandes gammes, pas chaque modèle.</p>
+      <div class="sealed-bar">
+        <div class="series-row" role="group" aria-label="Famille">${filters}</div>
+        <div class="sealed-tools">
+          <label class="sr-only" for="univers-q">Filtrer l'univers</label>
+          <input id="univers-q" type="search" placeholder="Nom d'un jeu ou d'un jouet" value="${esc(state.universQuery)}" autocomplete="off" enterkeyhint="search">
+          <label class="sr-only" for="univers-sort">Tri</label>
+          <select id="univers-sort" aria-label="Tri">
+            <option value="ancien"${state.universSort === "ancien" ? " selected" : ""}>Plus anciens</option>
+            <option value="recent"${state.universSort === "recent" ? " selected" : ""}>Plus récents</option>
+            <option value="cote"${state.universSort === "cote" ? " selected" : ""}>Cote</option>
+            <option value="nom"${state.universSort === "nom" ? " selected" : ""}>Nom</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid" id="univers-grid">${universTiles()}</div>
+      <div class="foot-row" id="univers-foot">${universMore()}</div>
+    </section>`;
+}
+
+async function loadUnivers() {
+  if (state.univers || state.universLoading) return;
+  state.universLoading = true;
+  state.universError = "";
+  if (state.tab === "univers") render();
+  try {
+    const response = await fetch("./univers.json");
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    state.univers = Array.isArray(data.products) ? data.products : [];
+    state.universAsOf = typeof data.asOf === "string" ? data.asOf : "";
+    state.universError = "";
+  } catch {
+    state.universError = "L'univers Pokémon n'a pas pu être chargé.";
+  } finally {
+    state.universLoading = false;
+    if (state.tab === "univers") render();
+  }
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
   if (state.tab === "galerie") app.innerHTML = galleryHTML();
   else if (state.tab === "extensions") app.innerHTML = extensionsHTML();
   else if (state.tab === "etb") app.innerHTML = etbHTML();
+  else if (state.tab === "univers") app.innerHTML = universHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
@@ -953,6 +1121,7 @@ function setTab(tab) {
   if (tab === "extensions") selectSeries(state.browseSeriesId);
   if (tab === "favoris") refreshFavs();
   if (tab === "etb") loadSealed();
+  if (tab === "univers") loadUnivers();
 }
 
 async function loadIconics() {
@@ -1389,17 +1558,29 @@ function bind() {
   });
 
   document.addEventListener("input", (event) => {
-    if (event.target.id !== "sealed-q") return;
-    state.sealedQuery = event.target.value;
-    state.sealedPage = 1;
-    paintSealed();
+    if (event.target.id === "sealed-q") {
+      state.sealedQuery = event.target.value;
+      state.sealedPage = 1;
+      paintSealed();
+    }
+    if (event.target.id === "univers-q") {
+      state.universQuery = event.target.value;
+      state.universPage = 1;
+      paintUnivers();
+    }
   });
 
   document.addEventListener("change", (event) => {
-    if (event.target.id !== "sealed-sort") return;
-    state.sealedSort = event.target.value;
-    state.sealedPage = 1;
-    paintSealed();
+    if (event.target.id === "sealed-sort") {
+      state.sealedSort = event.target.value;
+      state.sealedPage = 1;
+      paintSealed();
+    }
+    if (event.target.id === "univers-sort") {
+      state.universSort = event.target.value;
+      state.universPage = 1;
+      paintUnivers();
+    }
   });
 
   clear.addEventListener("click", () => {
@@ -1421,6 +1602,7 @@ function bind() {
     const seriesEl = event.target.closest("[data-series]");
     const tabEl = event.target.closest("[data-tab]");
     const sealedEl = event.target.closest("[data-sealed]");
+    const universEl = event.target.closest("[data-univers]");
     const openEl = event.target.closest("[data-open]");
     if (sealedEl) {
       if (sealedEl.dataset.sealed === "kind") {
@@ -1431,6 +1613,17 @@ function bind() {
       if (sealedEl.dataset.sealed === "more") {
         state.sealedPage += 1;
         paintSealed();
+      }
+    }
+    if (universEl) {
+      if (universEl.dataset.univers === "kind") {
+        state.universKind = universEl.dataset.kind || "tous";
+        state.universPage = 1;
+        render();
+      }
+      if (universEl.dataset.univers === "more") {
+        state.universPage += 1;
+        paintUnivers();
       }
     }
 
@@ -1452,6 +1645,12 @@ function bind() {
         state.sealedLoading = false;
         state.sealedError = "";
         loadSealed();
+      }
+      if (action === "univers-retry") {
+        state.univers = null;
+        state.universLoading = false;
+        state.universError = "";
+        loadUnivers();
       }
       if (action === "fav") toggleFav(actionEl.dataset.id);
       if (action === "unfav") {
@@ -1604,6 +1803,7 @@ function boot() {
   rememberTab(initialTab());
   render();
   if (state.tab === "etb") loadSealed();
+  if (state.tab === "univers") loadUnivers();
   updateFavCount();
   fetchJSON("/series")
     .then((list) => {
