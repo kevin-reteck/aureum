@@ -99,6 +99,36 @@ img { max-width: 100%; }
   align-items: center;
 }
 
+.brand-block { min-width: 0; }
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.session-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.session-email {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.session-email:empty { display: none; }
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(240, 215, 162, 0.38);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--gold-2);
+}
+.icon-btn:hover { border-color: var(--gold-2); }
+.session-actions .btn { min-height: 44px; padding: 0 14px; }
 .brand {
   display: flex;
   align-items: center;
@@ -107,6 +137,7 @@ img { max-width: 100%; }
   border: 0;
   background: none;
   text-align: left;
+  min-width: 0;
 }
 
 .mark {
@@ -1920,4 +1951,3 @@ html[data-porte="ok"] .skip { display: block !important; }
 .porte-form .hint { margin: 0; }
 .porte-form .signal-link { justify-self: start; text-align: left; }
 .porte-form .note:not(:empty) { color: var(--down); }
-#compte-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; }
