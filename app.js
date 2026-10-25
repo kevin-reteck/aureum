@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=50";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=52";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -1532,24 +1532,33 @@ function etbHTML() {
     </section>`;
 }
 
+let sealedPromise = null;
+
 async function loadSealed() {
-  if (state.sealed || state.sealedLoading) return;
+  if (state.sealed) return state.sealed;
+  if (sealedPromise) return sealedPromise;
   state.sealedLoading = true;
   state.sealedError = "";
   if (state.tab === "etb") render();
-  try {
-    const response = await fetch("./sealed.json");
-    if (!response.ok) throw new Error(String(response.status));
-    const data = await response.json();
-    state.sealed = Array.isArray(data.products) ? data.products : [];
-    state.sealedAsOf = typeof data.asOf === "string" ? data.asOf : "";
-    state.sealedError = "";
-  } catch {
-    state.sealedError = "Les coffrets n'ont pas pu être chargés.";
-  } finally {
-    state.sealedLoading = false;
-    if (state.tab === "etb") render();
-  }
+  sealedPromise = (async () => {
+    try {
+      const response = await fetch("./sealed.json");
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      state.sealed = Array.isArray(data.products) ? data.products : [];
+      state.sealedAsOf = typeof data.asOf === "string" ? data.asOf : "";
+      state.sealedError = "";
+      return state.sealed;
+    } catch {
+      state.sealedError = "Les coffrets n'ont pas pu être chargés.";
+      return null;
+    } finally {
+      state.sealedLoading = false;
+      sealedPromise = null;
+      if (state.tab === "etb") render();
+    }
+  })();
+  return sealedPromise;
 }
 
 const UNIVERS_KINDS = [
@@ -2567,6 +2576,14 @@ async function searchBinder(raw) {
   paintBinder();
 }
 
+function boxKind(value) {
+  return value === "etb" || value === "upc" || value === "coffret" ? value : "";
+}
+
+function boxShot(id) {
+  return `https://tcgplayer-cdn.tcgplayer.com/product/${id}_in_400x400.jpg`;
+}
+
 function blankCollection() {
   return { name: "", named: true, shareFavs: false, items: [] };
 }
@@ -2587,16 +2604,27 @@ function loadCollection() {
       name: looseName(raw.name).trim(),
       named: raw.named !== false,
       shareFavs: raw.shareFavs === true,
-      items: items.filter((item) => item && cleanId(item.id, "") && item.name).slice(0, COLL_MAX).map((item) => ({
-        id: item.id,
-        name: looseNote(item.name).trim() || "Carte",
-        image: typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : "",
-        setName: looseNote(item.setName).trim(),
-        localId: looseNote(item.localId).trim().slice(0, 16),
-        note: looseNote(item.note).trim(),
-        trend: typeof item.trend === "number" && item.trend >= 0 ? item.trend : null,
-        lang: MARKETS[item.lang] ? item.lang : "fr",
-      })),
+      items: items.filter((item) => item && cleanId(item.id, "") && item.name).slice(0, COLL_MAX).flatMap((item) => {
+        const box = boxKind(item.box);
+        if (box && !/^\d+$/.test(item.id)) return [];
+        const row = {
+          id: item.id,
+          name: looseNote(item.name).trim() || (box ? sealedLabel(box) : "Carte"),
+          image: box
+            ? boxShot(item.id)
+            : (typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : ""),
+          setName: looseNote(item.setName).trim(),
+          localId: box ? "" : looseNote(item.localId).trim().slice(0, 16),
+          note: looseNote(item.note).trim(),
+          trend: box || typeof item.trend !== "number" || item.trend < 0 ? null : item.trend,
+          lang: box ? "fr" : (MARKETS[item.lang] ? item.lang : "fr"),
+        };
+        if (box) {
+          row.box = box;
+          row.usd = typeof item.usd === "number" && item.usd >= 0 ? item.usd : null;
+        }
+        return [row];
+      }),
     };
   } catch {
     return blankCollection();
@@ -2608,7 +2636,11 @@ function saveCollection() {
 }
 
 function inCollection(id, lang = state.market) {
-  return state.collection.items.some((item) => item.id === id && (item.lang || "fr") === (lang || "fr"));
+  const key = String(id ?? "");
+  return state.collection.items.some((item) => {
+    if (item.box) return item.id === key;
+    return item.id === key && (item.lang || "fr") === (lang || "fr");
+  });
 }
 
 function collectionFromCard(card, note = "") {
@@ -2624,6 +2656,23 @@ function collectionFromCard(card, note = "") {
   };
 }
 
+function collectionFromBox(item, note = "") {
+  const id = String(item.id);
+  const kind = boxKind(item.kind || item.box);
+  return {
+    id,
+    name: looseNote(item.name).trim() || sealedLabel(kind),
+    image: boxShot(id),
+    setName: looseNote(item.set || item.setName || "").trim(),
+    localId: "",
+    note: looseNote(note).trim(),
+    lang: "fr",
+    trend: null,
+    box: kind,
+    usd: typeof item.usd === "number" && item.usd >= 0 ? item.usd : null,
+  };
+}
+
 function addToCollection(card) {
   const lang = card?.lang || state.market;
   if (!card?.id || inCollection(card.id, lang) || state.collection.items.length >= COLL_MAX) return;
@@ -2631,8 +2680,21 @@ function addToCollection(card) {
   saveCollection();
 }
 
+function addBox(item) {
+  const id = String(item?.id ?? "");
+  if (!/^\d+$/.test(id) || !boxKind(item?.kind)) return;
+  if (inCollection(id) || state.collection.items.length >= COLL_MAX) return;
+  state.collection.items.unshift(collectionFromBox(item));
+  saveCollection();
+}
+
 function removeFromCollection(id, lang = state.market) {
-  state.collection.items = state.collection.items.filter((item) => !(item.id === id && (item.lang || "fr") === (lang || "fr")));
+  const key = String(id ?? "");
+  state.collection.items = state.collection.items.filter((item) => {
+    if (item.id !== key) return true;
+    if (item.box) return false;
+    return (item.lang || "fr") !== (lang || "fr");
+  });
   saveCollection();
 }
 
@@ -2656,10 +2718,14 @@ function shareRow(item, withNote) {
     i: item.id,
     a: looseNote(item.name).trim(),
     s: looseNote(item.setName).trim(),
-    l: looseNote(item.localId).trim().slice(0, 16),
   };
+  if (!item.box) row.l = looseNote(item.localId).trim().slice(0, 16);
   if (withNote) row.c = looseNote(item.note).trim();
-  if (MARKETS[item.lang] && item.lang !== "fr") row.g = item.lang;
+  if (!item.box && MARKETS[item.lang] && item.lang !== "fr") row.g = item.lang;
+  if (item.box) {
+    row.k = item.box;
+    if (typeof item.usd === "number") row.u = Math.round(item.usd * 100) / 100;
+  }
   return row;
 }
 
@@ -2688,15 +2754,26 @@ function sanitizeRows(rows, withNote) {
     const id = cleanId(row?.i, "");
     const name = looseNote(row?.a).trim();
     if (!id || !name) return [];
-    return [{
+    const box = boxKind(row?.k);
+    if (box && !/^\d+$/.test(id)) return [];
+    const usd = typeof row?.u === "number" && Number.isFinite(row.u) && row.u >= 0 && row.u < 1e7
+      ? Math.round(row.u * 100) / 100
+      : null;
+    const item = {
       id,
       name,
-      image: "",
+      image: box ? boxShot(id) : "",
       setName: looseNote(row?.s).trim(),
-      localId: looseNote(row?.l).trim().slice(0, 16),
+      localId: box ? "" : looseNote(row?.l).trim().slice(0, 16),
       note: withNote ? looseNote(row?.c).trim() : "",
-      lang: MARKETS[row?.g] ? row.g : "fr",
-    }];
+      lang: box ? "fr" : (MARKETS[row?.g] ? row.g : "fr"),
+      trend: null,
+    };
+    if (box) {
+      item.box = box;
+      item.usd = usd;
+    }
+    return [item];
   });
 }
 
@@ -2723,7 +2800,36 @@ async function decodeShare(token) {
   }
 }
 
+function collBox(item, editable) {
+  const bits = [sealedLabel(item.box)];
+  if (item.setName) bits.push(item.setName);
+  const price = typeof item.usd === "number"
+    ? usdHTML(item.usd)
+    : `<span class="price-missing">Cote indisponible</span>`;
+  const note = editable
+    ? `<label class="coll-label">Commentaire
+        <textarea data-coll-note="${esc(item.id)}" data-lang="fr" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement.">${esc(item.note || "")}</textarea>
+      </label>
+      <button class="btn unfav" type="button" data-action="coll-remove" data-id="${esc(item.id)}" data-lang="fr">Retirer</button>`
+    : (item.note ? `<p class="coll-note">${esc(item.note)}</p>` : "");
+  return `
+    <article class="coll-card" data-card="${esc(item.id)}" data-box="${esc(item.box)}">
+      <button class="coll-open" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
+        <span class="art is-box" data-label="${esc(sealedLabel(item.box))}">
+          <img class="shot" src="${esc(item.image || boxShot(item.id))}" alt="${esc(item.name)}" decoding="async">
+        </span>
+      </button>
+      <div class="coll-body">
+        <button class="coll-title" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">${esc(item.name)}</button>
+        <p class="tile-meta">${esc(bits.join(" · "))}</p>
+        <p class="price-line">${price}</p>
+        ${note}
+      </div>
+    </article>`;
+}
+
 function collCard(card, editable) {
+  if (card.box) return collBox(card, editable);
   const meta = metaLine({ ...card, set: { name: card.setName } });
   const price = typeof card.trend === "number"
     ? `<span class="price">${esc(eur(card.trend))}</span>`
@@ -2780,38 +2886,131 @@ function visitHTML() {
     </section>`;
 }
 
+function boxEuro(usd) {
+  const rate = fxRates?.USD;
+  if (typeof usd !== "number" || typeof rate !== "number" || !(rate > 0)) return null;
+  return usd / rate;
+}
+
 function collectionWorth() {
   let sum = 0;
   let known = 0;
+  let cards = 0;
+  let boxes = 0;
+  let boxKnown = 0;
+  let pending = 0;
+  let missing = 0;
   state.collection.items.forEach((item) => {
-    if (typeof item.trend !== "number") return;
+    if (item.box) {
+      boxes += 1;
+      const euro = boxEuro(item.usd);
+      if (euro == null) {
+        if (typeof item.usd === "number" && (fxPromise || usdDisplayMode() === "pending")) pending += 1;
+        else missing += 1;
+        return;
+      }
+      sum += euro;
+      known += 1;
+      boxKnown += 1;
+      return;
+    }
+    cards += 1;
+    if (typeof item.trend !== "number") {
+      missing += 1;
+      return;
+    }
     sum += item.trend;
     known += 1;
   });
-  return { sum, known, total: state.collection.items.length };
+  return { sum, known, total: state.collection.items.length, cards, boxes, boxKnown, pending, missing };
+}
+
+function worthNote(worth) {
+  const { cards, boxes, boxKnown, pending } = worth;
+  if (!boxes) return "Somme des cotes Cardmarket, en euros. Chaque carte compte une fois. Pas un prix de vente.";
+  if (!cards) {
+    if (pending) return "Cotes TCGPlayer en dollars. Conversion en cours. Pas une cote Cardmarket. Pas un prix de vente.";
+    if (!boxKnown) return "Cotes TCGPlayer en dollars. La conversion est indisponible. Pas une cote Cardmarket. Pas un prix de vente.";
+    return "Somme des cotes TCGPlayer, en euros après conversion. Chaque coffret compte une fois. Pas une cote Cardmarket. Pas un prix de vente.";
+  }
+  if (pending && !boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+  if (!boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+  return "Les cartes sont en cotes Cardmarket. Les ETB, coffrets et UPC sont en cotes TCGPlayer, converties en euros. Chaque pièce compte une fois. Pas un prix de vente.";
 }
 
 function worthHTML() {
-  const { sum, known, total } = collectionWorth();
+  const worth = collectionWorth();
+  const { sum, known, total, boxes, pending, missing } = worth;
   if (!total) return "";
+  const note = worthNote(worth);
   if (!known) {
-    return `<p class="coll-worth" id="coll-worth"><span class="price-missing">Valeur indisponible</span></p>`;
+    const label = pending ? "Conversion…" : "Valeur indisponible";
+    return `<p class="coll-worth" id="coll-worth"><span class="price-missing">${label}</span><span class="deal-note">${esc(note)}</span></p>`;
   }
-  const missing = total - known;
-  const hole = missing ? `<span class="deal-note">${missing} ${missing > 1 ? "cartes" : "carte"} sans cote.</span>` : "";
+  const unit = boxes ? (missing > 1 ? "pièces" : "pièce") : (missing > 1 ? "cartes" : "carte");
+  const hole = missing ? `<span class="deal-note">${missing} ${unit} sans cote.</span>` : "";
+  const wait = pending ? `<span class="deal-note">Conversion des coffrets en cours.</span>` : "";
   return `
     <p class="coll-worth" id="coll-worth">
       <span class="kicker">Valeur indicative</span>
       <strong class="price">${esc(eur(sum))}</strong>
-      <span class="deal-note">Somme des cotes Cardmarket, en euros. Chaque carte compte une fois. Pas un prix de vente.</span>
+      <span class="deal-note">${esc(note)}</span>
       ${hole}
+      ${wait}
     </p>`;
+}
+
+function boxById(id) {
+  const lists = state.visit
+    ? [state.visit.items, state.visit.favs]
+    : [state.collection.items];
+  for (const list of lists) {
+    const item = list?.find((row) => row?.box && row.id === id);
+    if (item) return item;
+  }
+  return null;
+}
+
+function paintCollectionPrices() {
+  if (state.tab !== "collection") return;
+  if (!state.visit) {
+    const slot = document.getElementById("coll-worth");
+    const html = worthHTML();
+    if (slot) slot.outerHTML = html || "";
+    else if (html) document.getElementById("coll-form")?.insertAdjacentHTML("beforebegin", html);
+  }
+  document.querySelectorAll(".coll-card[data-box]").forEach((node) => {
+    const item = boxById(node.dataset.card);
+    const line = node.querySelector(".price-line");
+    if (!item || !line) return;
+    line.innerHTML = typeof item.usd === "number" ? usdHTML(item.usd) : `<span class="price-missing">Cote indisponible</span>`;
+  });
+}
+
+function collectionHasBox() {
+  if (state.visit) return [...(state.visit.items || []), ...(state.visit.favs || [])].some((item) => item.box);
+  return state.collection.items.some((item) => item.box);
 }
 
 async function refreshCollection() {
   if (state.visit || state.tab !== "collection" || !state.collection.items.length) return;
   const token = ++collEpoch;
-  await pool(state.collection.items, 4, async (item) => {
+  const boxes = state.collection.items.filter((item) => item.box);
+  const cards = state.collection.items.filter((item) => !item.box);
+  if (boxes.length) {
+    await Promise.all([loadSealed(), loadFx()]);
+    if (token !== collEpoch || state.visit || state.tab !== "collection") return;
+    boxes.forEach((item) => {
+      const row = (state.sealed || []).find((sealed) => String(sealed.id) === item.id);
+      if (!row) return;
+      if (boxKind(row.kind)) item.box = row.kind;
+      item.usd = typeof row.usd === "number" && row.usd >= 0 ? row.usd : null;
+      if (row.name) item.name = looseNote(row.name).trim() || item.name;
+      if (row.set) item.setName = looseNote(row.set).trim();
+      item.image = boxShot(item.id);
+    });
+  }
+  await pool(cards, 4, async (item) => {
     try {
       const full = await getCard(item.id, item.lang || "fr");
       if (token !== collEpoch || state.visit || state.tab !== "collection") return;
@@ -2825,9 +3024,7 @@ async function refreshCollection() {
   });
   if (token !== collEpoch || state.visit || state.tab !== "collection") return;
   saveCollection();
-  const slot = document.getElementById("coll-worth");
-  const html = worthHTML();
-  if (slot) slot.outerHTML = html;
+  paintCollectionPrices();
 }
 
 function collectionHTML() {
@@ -2835,7 +3032,7 @@ function collectionHTML() {
   const mine = state.collection;
   const empty = mine.items.length
     ? ""
-    : `<div class="empty-state"><p class="lede">Aucune carte pour l'instant. Ouvre une fiche, puis ajoute-la à ta collection.</p></div>`;
+    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Ouvre une carte, une ETB ou une UPC, puis ajoute-la à ta collection.</p></div>`;
   return `
     <section class="panel">
       <header class="section-head">
@@ -2843,7 +3040,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Tes cartes, un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
+        <p class="lede">Tes cartes, tes ETB et tes UPC, un commentaire, une cote en euros. Les coffrets aussi. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -2864,7 +3061,7 @@ function collectionHTML() {
 async function hydrateVisit() {
   if (!state.visit || state.visit.error || state.tab !== "collection") return;
   const token = ++visitEpoch;
-  const rows = [...(state.visit.items || []), ...(state.visit.favs || [])];
+  const rows = [...(state.visit.items || []), ...(state.visit.favs || [])].filter((row) => !row.box);
   await pool(rows, 4, async (row) => {
     try {
       const full = await getCard(row.id, row.lang || "fr");
@@ -2891,13 +3088,13 @@ async function copyCollectionLink() {
   const status = document.getElementById("coll-status");
   const payload = sharePayload();
   if (!payload) {
-    state.shareNote = "Ajoute une carte, ou coche les favoris, avant de copier le lien.";
+    state.shareNote = "Ajoute une carte, une ETB ou une UPC, ou coche les favoris, avant de copier le lien.";
     if (status) status.textContent = state.shareNote;
     return;
   }
   const token = await encodeShare(payload);
   if (token.length > 1800) {
-    state.shareNote = "Le lien est trop long. Raccourcis un commentaire ou retire une carte.";
+    state.shareNote = "Le lien est trop long. Raccourcis un commentaire ou retire une pièce.";
     if (status) status.textContent = state.shareNote;
     return;
   }
@@ -3035,6 +3232,7 @@ function setTab(tab) {
   if (tab === "collection") {
     hydrateVisit();
     refreshCollection();
+    if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
   }
   if (tab === "etb") {
     loadSealed();
@@ -3483,6 +3681,9 @@ function productHTML(item, family) {
         <h2>${esc(item.name)}</h2>
         ${typeof item.usd === "number" ? `<p class="cote-price">${esc(usdPlain(item.usd))}</p>` : ""}
         <p class="note">${esc(note)}</p>
+        ${family === "sealed" ? `<div class="fiche-actions">
+          <button class="btn" type="button" data-action="coll-add" data-family="sealed" data-id="${esc(item.id)}" ${!inCollection(String(item.id)) && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${inCollection(String(item.id)) ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
+        </div>` : ""}
       </div>
     </article>`;
 }
@@ -3618,7 +3819,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=50", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=52", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4115,7 +4316,11 @@ function bind() {
     const noteId = event.target.dataset?.collNote;
     if (noteId) {
       const noteLang = event.target.dataset.lang || "fr";
-      const item = state.collection.items.find((row) => row.id === noteId && (row.lang || "fr") === noteLang);
+      const item = state.collection.items.find((row) => {
+        if (row.id !== noteId) return false;
+        if (row.box) return true;
+        return (row.lang || "fr") === noteLang;
+      });
       if (item) {
         item.note = looseNote(event.target.value);
         saveCollection();
@@ -4314,9 +4519,14 @@ function bind() {
       if (action === "quote") quoteSet();
       if (action === "product") {
         const family = actionEl.dataset.family === "univers" ? "univers" : "sealed";
+        const id = actionEl.dataset.id;
         const list = family === "univers" ? state.univers : state.sealed;
-        const item = (list || []).find((row) => String(row.id) === actionEl.dataset.id);
+        const item = (list || []).find((row) => String(row.id) === id);
         if (item) openProduct(item, family);
+        else if (family === "sealed") loadSealed().then(() => {
+          const found = (state.sealed || []).find((row) => String(row.id) === id);
+          if (found) openProduct(found, "sealed");
+        });
       }
       if (action === "sealed-retry") {
         state.sealed = null;
@@ -4345,15 +4555,27 @@ function bind() {
         leaveRelief(() => openFiche(id, { lang }));
       }
       if (action === "coll-add") {
-        const id = actionEl.dataset.id;
-        const lang = actionEl.dataset.lang || state.market;
-        const card = cache.get(cacheKey(id, lang));
-        if (inCollection(id, lang)) removeFromCollection(id, lang);
-        else if (card) addToCollection(card);
-        const on = inCollection(id, lang);
-        actionEl.textContent = on ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection";
-        actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
-        if (state.tab === "collection" && !state.visit) render();
+        const finish = (id, lang) => {
+          const on = inCollection(id, lang);
+          actionEl.textContent = on ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection";
+          actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
+          if (state.tab === "collection" && !state.visit) render();
+        };
+        if (actionEl.dataset.family === "sealed") {
+          const id = String(actionEl.dataset.id || "");
+          const item = (state.sealed || []).find((row) => String(row.id) === id);
+          if (inCollection(id)) removeFromCollection(id);
+          else if (item) addBox(item);
+          finish(id, "fr");
+          if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
+        } else {
+          const id = actionEl.dataset.id;
+          const lang = actionEl.dataset.lang || state.market;
+          const card = cache.get(cacheKey(id, lang));
+          if (inCollection(id, lang)) removeFromCollection(id, lang);
+          else if (card) addToCollection(card);
+          finish(id, lang);
+        }
       }
       if (action === "coll-remove") {
         removeFromCollection(actionEl.dataset.id, actionEl.dataset.lang || state.market);
@@ -4444,6 +4666,7 @@ function bind() {
         loadFx().then(() => {
           if (state.tab === "etb" || state.tab === "univers") repaintUsdTab();
           else paintOpenProduct();
+          paintCollectionPrices();
         });
       }
     }
@@ -4775,12 +4998,14 @@ function boot() {
     if (state.tab === "collection") {
       hydrateVisit();
       refreshCollection();
+      if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
     }
     if (state.tab === "cotes") loadHall();
     fxReady.then(() => {
       if (state.tab === "etb" || state.tab === "univers") repaintUsdTab();
       else if (activeCurrency() !== "EUR" && (state.tab === "galerie" || state.tab === "cotes")) render();
       paintOpenProduct();
+      paintCollectionPrices();
     });
     if (state.setId) {
       fetchJSON("/series")
