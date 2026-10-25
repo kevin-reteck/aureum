@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=57";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=58";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -1880,12 +1880,16 @@ function universStatus() {
   return `${shown} sur ${total}. ${boosters} Le reste est recensé sans cote unitaire.`;
 }
 
+function universSrc(item) {
+  if (typeof item?.image === "string" && item.image.startsWith("https://")) return item.image;
+  if (/^\d+$/.test(String(item?.id))) return `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_400x400.jpg`;
+  return "";
+}
+
 function universFace(item) {
   const label = esc(universLabel(item.kind));
-  if (/^\d+$/.test(String(item.id))) {
-    const src = `https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg`;
-    return `<span class="art is-box" data-label="${label}"><img class="shot" src="${src}" alt="" decoding="async"></span>`;
-  }
+  const src = universSrc(item);
+  if (src) return `<span class="art is-box" data-label="${label}"><img class="shot" src="${esc(src)}" alt="" decoding="async"></span>`;
   const mark = esc(initials(item.name));
   return `<span class="art is-box" data-label="${label}"><span class="monogram">${mark}</span></span>`;
 }
@@ -1964,7 +1968,7 @@ function universHTML() {
         </div>
         <p class="lede" id="univers-status">${esc(universStatus())}</p>
       </header>
-      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle.</p>
+      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle. La photo vient de Bulbapedia quand la page en a une. Sinon, les initiales restent.</p>
       <div class="sealed-bar">
         <div class="series-row" role="group" aria-label="Famille">${filters}</div>
         <div class="sealed-tools">
@@ -4111,9 +4115,9 @@ function productHTML(item, family) {
   const bits = [label];
   if (item.set) bits.push(item.set);
   if (day) bits.push(day);
-  const shot = /^\d+$/.test(String(item.id))
-    ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg`
-    : "";
+  const shot = family === "univers"
+    ? universSrc(item).replace("_in_400x400", "_in_1000x1000")
+    : (/^\d+$/.test(String(item.id)) ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg` : "");
   const art = shot
     ? `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}">`
     : `<span class="monogram">${esc(initials(item.name))}</span>`;
@@ -4283,7 +4287,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=57", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=58", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
