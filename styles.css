@@ -19,11 +19,18 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
-html { scroll-behavior: smooth; color-scheme: dark; }
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+  background: #0b0a08;
+  min-height: 100%;
+  min-height: 100lvh;
+}
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100lvh;
   color: var(--paper);
   font-family: var(--sans);
   font-weight: 400;
@@ -1237,6 +1244,18 @@ dialog.is-leaving::backdrop {
   overflow: visible;
 }
 .relief { position: relative; display: grid; justify-items: center; gap: 12px; padding: 18px 8px calc(12px + env(safe-area-inset-bottom)); }
+.relief-tools {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+}
+.relief-tools .close { position: static; }
+.relief-tools .icon-btn { background: rgba(20, 18, 15, 0.88); }
+.relief-copy { display: grid; justify-items: center; gap: 12px; width: min(420px, 100%); }
+.relief-copy .fiche-actions { margin-top: 0; }
 .relief-stage {
   position: relative;
   perspective: 1100px;
@@ -1270,7 +1289,7 @@ dialog.is-leaving::backdrop {
   transform: translate3d(calc(var(--sx, 0) * -1px), calc(var(--sy, 0) * 0.45px), 0);
   pointer-events: none;
 }
-.relief .close { position: relative; z-index: 2; justify-self: end; }
+.relief .close { position: static; z-index: 2; }
 .relief .fiche-actions { position: relative; z-index: 2; }
 .relief .shine {
   background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 42%), rgba(255, 248, 230, 0.28), transparent 46%);
@@ -1278,10 +1297,8 @@ dialog.is-leaving::backdrop {
 #relief.is-leaving .relief-stage {
   animation: relief-back 0.24s cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
 }
-#relief.is-leaving .relief-name,
-#relief.is-leaving .hint,
-#relief.is-leaving .fiche-actions,
-#relief.is-leaving .close {
+#relief.is-leaving .relief-copy,
+#relief.is-leaving .relief-tools {
   opacity: 0;
   transition: opacity 0.18s ease;
 }
@@ -1376,8 +1393,14 @@ dialog.is-leaving::backdrop {
 .holo[data-foil="cadre"]::before { opacity: 0.48; }
 .holo.is-quiet::before { opacity: 0.34; }
 .holo.is-quiet::after { opacity: 0.2; }
-.pocket.is-full:hover .holo.is-quiet,
-.pocket.is-full:focus-visible .holo.is-quiet { opacity: 0.55; }
+.pocket.is-full:hover .pocket-card.is-shown > .holo.is-quiet,
+.pocket.is-full:focus-visible .pocket-card.is-shown > .holo.is-quiet { opacity: 0.55; }
+.pocket-card:not(.is-shown) > img,
+.pocket-card:not(.is-shown) > .holo,
+.pocket.is-full:hover .pocket-card:not(.is-shown) > .holo,
+.relief .stage:not(.is-shown) > img,
+.relief .stage:not(.is-shown) > .holo,
+.relief .stage:not(.is-shown) > .shine { opacity: 0; }
 .relief-name { margin: 0; font-family: var(--serif); font-size: 1.6rem; font-weight: 560; }
 @media (max-width: 720px) {
   .binder-book { padding: 12px 8px 16px 0; }
@@ -1677,13 +1700,18 @@ dialog.is-leaving::backdrop {
   .duo { grid-template-columns: 1fr; }
   dialog {
     position: fixed;
-    /* 100dvh est plus court que l'écran d'environ l'encoche (iPhone, écran d'accueil).
-       La fiche s'arrêtait trop haut : boutons coupés, bandeau vide en bas.
-       top/bottom à 0 et height auto épousent l'écran, encoche comprise. */
-    inset: 0;
-    width: auto;
+    /* height:auto et 100dvh s'arrêtent avant le bas physique sur iPhone :
+       bande noire sous la carte en grand. 100lvh part du haut et couvre l'écran. */
+    top: 0;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: 100%;
     max-width: none;
-    height: auto;
+    height: 100%;
+    height: 100lvh;
+    min-height: 100%;
+    min-height: -webkit-fill-available;
     max-height: none;
     margin: 0;
     border: 0;
@@ -1726,12 +1754,31 @@ dialog.is-leaving::backdrop {
     color: var(--paper);
   }
   .relief {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100%;
+    flex: 1 1 auto;
+    align-content: space-between;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     padding-top: calc(18px + max(env(safe-area-inset-top), 59px));
     padding-bottom: calc(12px + max(env(safe-area-inset-bottom), 34px));
+  }
+  .relief-stage {
+    min-height: 0;
+    width: 100%;
+    display: grid;
+    place-items: center;
+  }
+  .relief .stage {
+    width: min(320px, 74vw, calc((100lvh - 340px) * 63 / 88));
+    max-height: 100%;
   }
   #relief {
     width: auto;
     max-width: none;
+    display: flex;
+    flex-direction: column;
+    background: #0b0a08;
     overflow: auto;
     overscroll-behavior: contain;
   }
@@ -1795,7 +1842,9 @@ dialog.is-leaving::backdrop {
   .text-btn { min-height: 44px; min-width: 44px; padding-inline: 8px; }
   .series-row button,
   .fav-sort-btn { min-height: 44px; }
-  .relief .close { min-height: 44px; padding-inline: 16px; }
+  .relief-tools .close { min-height: 44px; padding-inline: 16px; }
+  .fiche-bar .icon-btn,
+  .relief-tools .icon-btn { background: #2a251c; }
   .sets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .set-tile { min-height: 168px; padding: 12px; }
   .set-name { overflow-wrap: break-word; }

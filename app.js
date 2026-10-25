@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=44";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=45";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -499,11 +499,25 @@ function markBroken(img) {
   img.dataset.probing = "";
   img.classList.remove("is-trying");
   img.classList.add("is-broken");
+  marquerScan(img);
+}
+
+function hoteScan(img) {
+  return img.closest?.(".stage, .pocket-card") || null;
+}
+
+function marquerScan(img) {
+  if (!(img instanceof HTMLImageElement)) return;
+  const hote = hoteScan(img);
+  if (!hote) return;
+  const pret = img.complete && img.naturalWidth > 0 && !img.classList.contains("is-broken") && !img.classList.contains("is-trying");
+  hote.classList.toggle("is-shown", pret);
 }
 
 function revealScan(img) {
   if (!(img instanceof HTMLImageElement)) return;
   if (img.complete && img.naturalWidth > 0) img.classList.remove("is-trying", "is-broken");
+  marquerScan(img);
 }
 
 function wakeScans(root = document) {
@@ -511,6 +525,7 @@ function wakeScans(root = document) {
     if (!(img instanceof HTMLImageElement)) return;
     if (img.complete && img.naturalWidth > 0) {
       img.classList.remove("is-trying", "is-broken");
+      marquerScan(img);
       return;
     }
     if (img.classList.contains("shot")) {
@@ -535,8 +550,12 @@ function showScan(img, src) {
   img.dataset.fallbacks = "";
   img.classList.remove("is-broken");
   img.classList.add("is-trying");
+  hoteScan(img)?.classList.remove("is-shown");
   if (img.getAttribute("src") !== src) img.src = src;
-  else img.classList.remove("is-trying");
+  else {
+    img.classList.remove("is-trying");
+    marquerScan(img);
+  }
 }
 
 function probeScans(img, urls) {
@@ -1929,6 +1948,7 @@ function paintBinder() {
   status.textContent = binderLabel();
   hits.innerHTML = binderHitsHTML();
   hits.scrollLeft = 0;
+  wakeScans(grid);
   wakeScans(hits);
   if (drop) {
     const empty = page.every((id) => !id);
@@ -1974,11 +1994,15 @@ function binderHTML() {
     </section>`;
 }
 
+function boutonBug() {
+  return `<button class="icon-btn signaler" type="button" data-signaler aria-label="Signaler un problème"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 8c0-1.7 1.3-3 3-3s3 1.3 3 3"/><path d="M8 9.5h8"/><ellipse cx="12" cy="14" rx="4.2" ry="5"/><path d="M9.2 6.2 7 3.5M14.8 6.2 17 3.5"/><path d="M8 12 4.5 10.5M8 15H4M8.4 17.8 5.2 20.5"/><path d="M16 12l3.5-1.5M16 15h4M15.6 17.8l3.2 2.7"/></svg></button>`;
+}
+
 function reliefHTML(card, slot) {
   const kind = foilKind(card);
   return `
     <div class="relief">
-      <button class="close" type="button" data-action="close">Fermer</button>
+      <div class="relief-tools">${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>
       <div class="relief-stage">
         <div class="stage" data-tilt data-foil="${kind}" data-art="${artSize(card)}" data-label="${esc(initials(card.name))}">
           ${imgTag(card, "high", true)}
@@ -1987,11 +2011,13 @@ function reliefHTML(card, slot) {
         </div>
         <span class="relief-shadow" aria-hidden="true"></span>
       </div>
-      <p class="relief-name">${esc(prettyName(card.name))}</p>
-      <p class="hint">${foilHint(kind)}</p>
-      <div class="fiche-actions">
-        <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">Voir la fiche</button>
-        <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
+      <div class="relief-copy">
+        <p class="relief-name">${esc(prettyName(card.name))}</p>
+        <p class="hint">${foilHint(kind)}</p>
+        <div class="fiche-actions">
+          <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">Voir la fiche</button>
+          <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
+        </div>
       </div>
     </div>`;
 }
@@ -2280,6 +2306,7 @@ function openRelief(id, slot) {
   dialog.classList.remove("is-leaving");
   dialog.dataset.card = card.id;
   dialog.innerHTML = reliefHTML(card, slot);
+  wakeScans(dialog);
   resetFoilTilt(dialog.querySelector("[data-tilt]"));
   lockSheet();
   if (!dialog.open) dialog.showModal();
@@ -2937,6 +2964,7 @@ function render() {
     app.querySelectorAll("img.is-trying").forEach((img) => {
       if (img.naturalWidth > 0) img.classList.remove("is-trying", "is-broken");
       else img.classList.remove("is-trying");
+      marquerScan(img);
     });
   }, 1800);
 }
@@ -3365,7 +3393,7 @@ function ficheBar() {
   const next = random
     ? `<button class="btn solid next-card" type="button" data-action="random-next">Suivante</button>`
     : "";
-  return `<div class="fiche-bar">${next}<button class="close" type="button" data-action="close">Fermer</button></div>`;
+  return `<div class="fiche-bar">${next}${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>`;
 }
 
 function nextRandomId() {
@@ -3614,7 +3642,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=44", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=45", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -3829,7 +3857,8 @@ async function partagerSignal(report) {
 }
 
 function bindSignal() {
-  document.getElementById("signaler")?.addEventListener("click", () => {
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest?.("[data-signaler]")) return;
     ouvrirSignal();
   });
   const dialog = document.getElementById("signal");
@@ -4343,7 +4372,9 @@ function bind() {
 
   document.addEventListener("load", (event) => {
     const img = event.target;
-    if (img instanceof HTMLImageElement) img.classList.remove("is-trying", "is-broken");
+    if (!(img instanceof HTMLImageElement)) return;
+    img.classList.remove("is-trying", "is-broken");
+    marquerScan(img);
   }, true);
 
   document.addEventListener("error", (event) => {
@@ -4464,7 +4495,7 @@ function applyMarket(lang) {
   openDefaultSet();
 }
 
-const JOURNAL_ID = "1";
+const JOURNAL_ID = "2";
 const JOURNAL_KEY = "aureum.journal";
 
 function journalDejaLu() {
