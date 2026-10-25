@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=60">
+    <link rel="stylesheet" href="styles.css?v=61">
     <style>html,body{background:#0b0a08}</style>
     <script>
       window.aureumErreurs = [];
@@ -31,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "60";
+      const VERSION_PAGE = "61";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -103,6 +103,7 @@
           <input id="porte-code-mot" type="password" autocomplete="current-password" enterkeyhint="go" required>
         </label>
         <button class="btn solid" type="submit">Entrer</button>
+        <p class="hint">Dans ce navigateur, il n'est plus redemandé pendant une semaine.</p>
         <p class="note" id="porte-code-note" role="alert"></p>
       </form>
       <form class="porte-form" id="porte-entrer" hidden>
@@ -265,6 +266,7 @@
             <li>Les jeux, les peluches et les jouets montrent une photo quand Bulbapedia en a une.</li>
             <li>Sur la fiche, Autre photo cherche un autre visuel. Le prix d'un jeu complet indique la date du relevé.</li>
             <li>Les jeux, les peluches et le reste de l'univers entrent dans la collection.</li>
+            <li>Si le code a déjà été tapé dans ce navigateur, il n'est plus redemandé pendant une semaine.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -275,9 +277,28 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=60";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=61";
 
       const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
+      const PORTE_CLE = "aureum.porte";
+      const PORTE_SEMAINE = 7 * 24 * 60 * 60 * 1000;
+
+      function porteValable() {
+        try {
+          const jusqua = Number(localStorage.getItem(PORTE_CLE));
+          return Number.isFinite(jusqua) && jusqua > Date.now();
+        } catch {
+          return false;
+        }
+      }
+
+      function retenirPorte() {
+        try {
+          localStorage.setItem(PORTE_CLE, String(Date.now() + PORTE_SEMAINE));
+        } catch {
+          /* Sans stockage, le code revient à la prochaine ouverture. */
+        }
+      }
       const porte = document.getElementById("porte");
       const codeForm = document.getElementById("porte-code");
       const entrerForm = document.getElementById("porte-entrer");
@@ -305,7 +326,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=60");
+        import("./app.js?v=61");
       }
 
       function fermerPorte() {
@@ -319,7 +340,10 @@
       if (aDesOrphelins()) {
         document.getElementById("porte-lede").textContent = "Le premier compte reprend le classeur et la collection déjà sur cet appareil.";
       }
-      montrer(codeForm);
+      if (porteValable()) {
+        if (sessionActive()) ouvrirCabinet();
+        else fermerPorte();
+      } else montrer(codeForm);
 
       codeForm.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -336,6 +360,7 @@
           return;
         }
         input.value = "";
+        retenirPorte();
         if (sessionActive()) ouvrirCabinet();
         else fermerPorte();
       });
