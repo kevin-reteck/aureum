@@ -1149,3 +1149,40 @@ dialog::backdrop {
   .cote-hero { grid-template-columns: 1fr; }
   .cote-open .art { max-width: 240px; }
 }
+
+body.locked .top,
+body.locked main,
+body.locked .colophon,
+body.locked dialog,
+body.locked .skip { display: none !important; }
+html[data-porte="ok"] #porte { display: none !important; }
+html[data-porte="ok"] .top,
+html[data-porte="ok"] main,
+html[data-porte="ok"] .colophon,
+html[data-porte="ok"] .skip { display: block !important; }
+
+#porte {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+}
+#porte[hidden] { display: none !important; }
+#porte-form {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 14px;
+}
+#porte-form h1 { font-size: clamp(2.6rem, 10vw, 3.4rem); }
+#porte-mot {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  background: #14120f;
+  color: var(--paper);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 16px;
+}
+#porte-form .btn { justify-self: start; }

@@ -16,10 +16,27 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20">
+    <link rel="stylesheet" href="styles.css?v=21">
     <style>html,body{background:#0b0a08}</style>
+    <script>
+      try {
+        if (localStorage.getItem("aureum.porte") === "1") document.documentElement.dataset.porte = "ok";
+      } catch (error) { /* L'appareil refuse le stockage : la porte reste fermée. */ }
+    </script>
   </head>
-  <body>
+  <body class="locked">
+    <div id="porte">
+      <form id="porte-form">
+        <p class="kicker">Cabinet privé</p>
+        <h1>Aureum</h1>
+        <p class="lede">Ce cabinet est fermé. Le mot de passe l'ouvre sur cet appareil.</p>
+        <label class="field" for="porte-mot">Mot de passe
+          <input id="porte-mot" type="password" autocomplete="current-password" enterkeyhint="go" required>
+        </label>
+        <button class="btn solid" type="submit">Entrer</button>
+        <p class="note" id="porte-note" role="alert"></p>
+      </form>
+    </div>
     <a class="skip" href="#contenu">Aller au contenu</a>
     <header class="top">
       <div class="top-inner">
@@ -62,7 +79,41 @@
     </footer>
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
-    <script src="app.js?v=20" type="module"></script>
+    <script>
+      const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
+      const PORTE_KEY = "aureum.porte";
+      const porte = document.getElementById("porte");
+      const form = document.getElementById("porte-form");
+      const input = document.getElementById("porte-mot");
+      const note = document.getElementById("porte-note");
+
+      function ouvrirCabinet() {
+        document.body.classList.remove("locked");
+        porte.hidden = true;
+        import("./app.js?v=21");
+      }
+
+      async function empreinte(texte) {
+        const octets = new TextEncoder().encode(texte);
+        const tampon = await crypto.subtle.digest("SHA-256", octets);
+        return [...new Uint8Array(tampon)].map((octet) => octet.toString(16).padStart(2, "0")).join("");
+      }
+
+      if (localStorage.getItem(PORTE_KEY) === "1") ouvrirCabinet();
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const hash = await empreinte(input.value);
+        if (hash !== PORTE_HASH) {
+          note.textContent = "Mot de passe incorrect.";
+          input.value = "";
+          input.focus();
+          return;
+        }
+        localStorage.setItem(PORTE_KEY, "1");
+        ouvrirCabinet();
+      });
+    </script>
     <noscript>Aureum a besoin de JavaScript pour interroger les cotes.</noscript>
   </body>
 </html>
