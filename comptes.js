@@ -1,7 +1,7 @@
 const COMPTES_KEY = "aureum.comptes";
 const SESSION_KEY = "aureum.session";
 const MIGRE_KEY = "aureum.migre";
-const DEV_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
+const DEV_HASH = "19e2cb122e0e35e155996c2559b30e8bc1b6c56667cddd8b63d229c23351ee76";
 const ITERATIONS = 80000;
 const COMPTE_MAX = 3;
 
@@ -151,7 +151,7 @@ export async function preparer() {
   const sauvee = emailPropre(localStorage.getItem(SESSION_KEY) || "");
   session = sauvee && comptes.users[sauvee] ? sauvee : "";
   try {
-    const reponse = await fetch(new URL("comptes.json?v=53", location.href));
+    const reponse = await fetch(new URL("comptes.json?v=54", location.href));
     if (reponse.ok) fusionner(await reponse.json());
   } catch {
     /* L'appareil garde sa copie si le fichier n'est pas joignable. */
