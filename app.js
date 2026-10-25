@@ -1,7 +1,7 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=53";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=62";
 
 const CTX_KEY = "aureum.contexte";
-const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
 const COLL_MAX = 30;
 const NOTE_MAX = 140;
 const POCKETS = 9;
@@ -132,6 +132,18 @@ function loadMarket() {
 
 const savedMarket = loadMarket();
 
+const UNIVERS_KINDS = [
+  ["tous", "Tous"],
+  ["jeu", "Jeux"],
+  ["pack", "Packs"],
+  ["topps", "Topps"],
+  ["autocollant", "Autocollants"],
+  ["panini", "Panini"],
+  ["peluche", "Peluches"],
+  ["figurine", "Figurines"],
+  ["jouet", "Jouets"],
+];
+
 const state = {
   tab: "galerie",
   view: "set",
@@ -156,10 +168,12 @@ const state = {
   visit: null,
   shareNote: "",
   hallCards: [],
-  hallOrder: [],
   hallLoading: false,
   hallFailed: false,
-  coteMode: "tendance",
+  coteSort: "desc",
+  coteFamille: "cartes",
+  coteGen: "toutes",
+  cotePage: 1,
   binder: loadBinder(),
   binderSlot: null,
   binderQuery: "",
@@ -184,6 +198,9 @@ const state = {
   universSort: "ancien",
   universQuery: "",
   universPage: 1,
+  photos: loadPhotos(),
+  photoBusy: "",
+  photoNote: "",
   market: savedMarket.market,
   currency: savedMarket.currency,
 };
@@ -398,6 +415,9 @@ function repaintUsdTab() {
     else render();
   } else if (state.tab === "univers") {
     if (document.getElementById("univers-grid")) paintUnivers();
+    else render();
+  } else if (state.tab === "cotes") {
+    if (document.getElementById("cote-hall")) paintCotes();
     else render();
   }
   paintOpenProduct();
@@ -1128,7 +1148,7 @@ function extensionsHTML() {
       </header>
       <div class="toolbar"><div class="controls">${marketSelects()}</div></div>
       ${priceModeNote() ? `<p class="note">${esc(priceModeNote())}</p>` : ""}
-      <div class="series-row">${seriesButtons || `<p class="empty">Chargement des séries…</p>`}</div>
+      <div class="chip-rail"><div class="series-row">${seriesButtons || `<p class="empty">Chargement des séries…</p>`}</div></div>
       ${state.error ? `<p class="banner" role="alert">${esc(state.error)}</p>` : ""}
       ${body}
     </section>`;
@@ -1181,26 +1201,69 @@ function quoteHTML() {
     ${quote.rows.length ? rankList(quote.rows) : ""}`;
 }
 
-function shuffleIds(ids) {
-  const copy = ids.slice();
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const swap = copy[i];
-    copy[i] = copy[j];
-    copy[j] = swap;
-  }
-  return copy;
+const COTES_FAMILLES = [
+  ["tout", "Tout"],
+  ["cartes", "Cartes"],
+  ["etb", "ETB"],
+  ["coffret", "Coffrets"],
+  ["upc", "UPC"],
+];
+
+const COTES_GENS = [
+  ["me", "Méga-Évolution", ["me"]],
+  ["sv", "Écarlate et Violet", ["sv"]],
+  ["swsh", "Épée et Bouclier", ["swsh"]],
+  ["sm", "Soleil et Lune", ["sm"]],
+  ["xy", "XY", ["xy"]],
+  ["bw", "Noir et Blanc", ["bw"]],
+  ["hgss", "HeartGold SoulSilver", ["hgss", "col"]],
+  ["dp", "Diamant et Perle", ["dp", "pl", "pop"]],
+  ["ex", "EX", ["ex"]],
+  ["neo", "Neo", ["neo", "ecard"]],
+  ["base", "Set de base", ["base", "gym", "lc"]],
+];
+
+const SERIE_PREFIXES = ["swsh", "hgss", "ecard", "base", "gym", "neo", "pop", "col", "bw", "xy", "sm", "sv", "me", "dp", "pl", "ex", "lc"];
+
+function serieDepuisId(setId) {
+  const id = String(setId || "").toLowerCase();
+  return SERIE_PREFIXES.find((prefix) => id === prefix || id.startsWith(prefix)) || "";
 }
 
-function orderedHall() {
-  const cards = state.hallCards.slice();
-  if (state.coteMode === "melange") {
-    const order = new Map(state.hallOrder.map((id, index) => [id, index]));
-    cards.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
-    return cards;
-  }
-  cards.sort((a, b) => trendOf(b) - trendOf(a));
-  return cards;
+function genDepuisSerie(serie) {
+  const hit = COTES_GENS.find(([, , series]) => series.includes(serie));
+  return hit ? hit[0] : "";
+}
+
+function carteGen(card) {
+  const setId = card?.set?.id || String(card?.id || "").split("-")[0];
+  return genDepuisSerie(serieDepuisId(setId));
+}
+
+function sealedGen(item) {
+  const set = String(item?.set || "");
+  if (/^ME\d|^ME:/.test(set) || set === "First Partner Collection 2026") return "me";
+  if (/^SV\d|^SV:/.test(set)) return "sv";
+  if (/^SWSH|^Pokemon GO$|^Celebrations$|^Champion's Path$|^Shining Fates$/.test(set)) return "swsh";
+  if (/^SM\b|^SM -|^Hidden Fates$|^Shining Legends$|^Dragon Majesty$|^Detective Pikachu$/.test(set)) return "sm";
+  if (/^XY\b|^XY -|^Generations$/.test(set)) return "xy";
+  if (set === "Next Destinies" || set === "Emerging Powers") return "bw";
+  if (set === "Southern Islands") return "base";
+  return "";
+}
+
+function coteGenNom(id) {
+  if (id === "autres") return "hors série connue";
+  const hit = COTES_GENS.find(([gen]) => gen === id);
+  return hit ? hit[1] : "";
+}
+
+function coteVeutCartes(famille = state.coteFamille) {
+  return famille === "tout" || famille === "cartes";
+}
+
+function coteVeutBoites(famille = state.coteFamille) {
+  return famille !== "cartes";
 }
 
 function dearLine(card) {
@@ -1242,23 +1305,207 @@ async function loadHall() {
   });
   if (token !== hallEpoch) return;
   state.hallCards = rows;
-  state.hallOrder = shuffleIds(rows.map((card) => card.id));
   state.hallFailed = rows.length === 0;
   state.hallLoading = false;
   if (state.tab === "cotes") render();
 }
 
+function coteNom(row) {
+  return row.kind === "carte" ? prettyName(row.card.name) : String(row.item?.name || "");
+}
+
+function coteEntries(famille = state.coteFamille, gen = state.coteGen) {
+  const rows = [];
+  if (coteVeutCartes(famille)) {
+    state.hallCards.forEach((card) => {
+      const groupe = carteGen(card);
+      if (gen === "autres") return;
+      if (gen !== "toutes" && groupe !== gen) return;
+      const euro = trendOf(card);
+      rows.push({ kind: "carte", euro: euro >= 0 ? euro : null, card });
+    });
+  }
+  if (coteVeutBoites(famille) && Array.isArray(state.sealed)) {
+    state.sealed.forEach((item) => {
+      if (typeof item.usd !== "number") return;
+      if (famille === "etb" || famille === "coffret" || famille === "upc") {
+        if (item.kind !== famille) return;
+      }
+      const groupe = sealedGen(item);
+      if (gen === "autres") {
+        if (groupe) return;
+      } else if (gen !== "toutes" && groupe !== gen) return;
+      const euro = typeof item.usd === "number" ? boxEuro(item.usd) : null;
+      rows.push({ kind: "boite", euro, item });
+    });
+  }
+  const dir = state.coteSort === "asc" ? 1 : -1;
+  rows.sort((a, b) => {
+    const aManque = typeof a.euro !== "number";
+    const bManque = typeof b.euro !== "number";
+    if (aManque !== bManque) return aManque ? 1 : -1;
+    if (!aManque && a.euro !== b.euro) return (a.euro - b.euro) * dir;
+    if (aManque && bManque && a.kind === "boite" && b.kind === "boite") {
+      const au = typeof a.item.usd === "number" ? a.item.usd : -1;
+      const bu = typeof b.item.usd === "number" ? b.item.usd : -1;
+      if (au !== bu) return (au - bu) * dir;
+    }
+    return coteNom(a).localeCompare(coteNom(b), "fr");
+  });
+  return rows;
+}
+
+function coteAttente() {
+  const cartes = coteVeutCartes();
+  const boites = coteVeutBoites();
+  if (boites && !state.sealed && !state.sealedError) return "Ouverture des coffrets…";
+  if (boites && state.sealed && usdDisplayMode() === "pending") return "Conversion des cotes en euros…";
+  if (cartes && !state.hallFailed && !state.hallCards.length) return "Lecture des cotes…";
+  return "";
+}
+
+function cotePhrase() {
+  const sens = state.coteSort === "asc" ? "de la moins chère à la plus chère" : "de la plus chère à la moins chère";
+  const gen = state.coteGen === "toutes" ? "" : coteGenNom(state.coteGen);
+  let sujet = "Tout mélangé";
+  if (state.coteFamille === "cartes") sujet = "Cartes de l'étagère";
+  else if (state.coteFamille === "etb") sujet = "ETB";
+  else if (state.coteFamille === "coffret") sujet = "Coffrets";
+  else if (state.coteFamille === "upc") sujet = "UPC";
+  return `${gen ? `${sujet}, ${gen}` : sujet}, ${sens}`;
+}
+
+function coteSource() {
+  if (state.coteFamille === "cartes") return "Cotes Cardmarket en euros.";
+  if (state.sealedError && !state.sealed) return "Les coffrets n'ont pas pu être chargés.";
+  const mode = usdDisplayMode();
+  if (mode === "usd") {
+    if (state.coteFamille === "tout") return "Cartes Cardmarket en euros. Coffrets TCGPlayer en dollars.";
+    return "Cotes TCGPlayer en dollars. Pas une cote Cardmarket.";
+  }
+  if (mode === "unavailable") return "Cotes TCGPlayer en dollars. La conversion en euros est indisponible.";
+  if (state.coteFamille === "tout") return "Cartes Cardmarket en euros. Coffrets TCGPlayer convertis en euros.";
+  return "Cotes TCGPlayer converties en euros. Pas une cote Cardmarket.";
+}
+
+function coteStatus(total) {
+  if (coteAttente()) return coteAttente();
+  if (!total) return `Rien dans ce filtre. ${cotePhrase()}.`;
+  const shown = Math.min(state.cotePage * PAGE_SIZE, total);
+  const compte = shown < total ? `${shown} sur ${total}` : String(total);
+  return `${compte}. ${cotePhrase()}. ${coteSource()}`;
+}
+
+function coteHeroBox(item, euro) {
+  const dear = typeof euro === "number" && euro >= DEAR_EUR;
+  const prix = typeof item.usd === "number" ? usdPlain(item.usd) : "";
+  const meta = [sealedLabel(item.kind), item.set].filter(Boolean).join(" · ");
+  return `
+    <article class="cote-hero${dear ? " is-dear" : ""}">
+      <button class="cote-open is-box" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
+        <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
+          <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="" decoding="async">
+        </span>
+      </button>
+      <div>
+        ${dear ? `<p class="cote-wow">Elle coûte cher.</p>` : ""}
+        <p class="cote-price">${esc(prix)}</p>
+        <h3 class="cote-name">${esc(item.name)}</h3>
+        <p class="tile-meta">${esc(meta)}</p>
+        <p class="note">Cote TCGPlayer. Pas une offre.</p>
+      </div>
+    </article>`;
+}
+
+function coteRang(row, index) {
+  const rang = String(index + 1).padStart(2, "0");
+  if (row.kind === "carte") {
+    const card = row.card;
+    return `
+      <li>
+        <button type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">
+          <span class="rank">${rang}</span>
+          <span class="rank-art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
+          <span class="rank-copy">
+            <span class="rank-name">${esc(prettyName(card.name))}</span>
+            <span class="rank-meta">${esc(metaLine(card))}</span>
+          </span>
+          <span class="rank-val">${priceHTML(card)}</span>
+        </button>
+      </li>`;
+  }
+  const item = row.item;
+  const meta = [sealedLabel(item.kind), item.set].filter(Boolean).join(" · ");
+  const prix = typeof item.usd === "number" ? usdHTML(item.usd) : `<span class="price-missing">Cote indisponible</span>`;
+  return `
+    <li>
+      <button type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
+        <span class="rank">${rang}</span>
+        <span class="rank-art is-box" data-label="${esc(sealedLabel(item.kind))}">
+          <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="" decoding="async">
+        </span>
+        <span class="rank-copy">
+          <span class="rank-name">${esc(item.name)}</span>
+          <span class="rank-meta">${esc(meta)}</span>
+        </span>
+        <span class="rank-val">${prix}</span>
+      </button>
+    </li>`;
+}
+
+function coteCorps(rows) {
+  const attente = coteAttente();
+  if (attente) return `<p class="note">${esc(attente)}</p>${skeletonRanks(4)}`;
+  if (coteVeutCartes() && state.hallFailed && !state.hallCards.length && state.coteFamille === "cartes") {
+    return `<p class="note">Les cotes ne répondent pas. Rouvre la salle dans un instant.</p>`;
+  }
+  if (coteVeutBoites() && state.sealedError && !state.sealed && state.coteFamille !== "tout") {
+    return `<p class="note">${esc(state.sealedError)} <button class="btn" type="button" data-action="sealed-retry">Réessayer</button></p>`;
+  }
+  if (!rows.length) return `<p class="note">Rien dans ce filtre.</p>`;
+  const shown = rows.slice(0, state.cotePage * PAGE_SIZE);
+  const premier = shown[0];
+  const hero = premier.kind === "carte" ? coteHero(premier.card) : coteHeroBox(premier.item, premier.euro);
+  const suite = shown.slice(1).map((row, index) => coteRang(row, index + 1)).join("");
+  const alerte = state.coteFamille === "tout" && state.sealedError && !state.sealed
+    ? `<p class="note">${esc(state.sealedError)} <button class="btn" type="button" data-action="sealed-retry">Réessayer</button></p>`
+    : "";
+  return `${alerte}${hero}${suite ? `<ol class="ranks">${suite}</ol>` : ""}`;
+}
+
+function coteSuite(total) {
+  if (coteAttente() || state.cotePage * PAGE_SIZE >= total) return "";
+  return `<div class="more-sentinel" data-more="cotes"></div>`;
+}
+
+function paintCotes() {
+  const hall = document.getElementById("cote-hall");
+  const foot = document.getElementById("cote-foot");
+  const status = document.getElementById("cote-status");
+  if (!hall || !foot || !status) {
+    render();
+    return;
+  }
+  const rows = coteEntries();
+  status.textContent = coteStatus(rows.length);
+  hall.innerHTML = coteCorps(rows);
+  foot.innerHTML = coteSuite(rows.length);
+  watchMore();
+  wakeScans(hall);
+}
+
 function cotesHTML() {
-  const cards = orderedHall();
-  const hero = cards[0] ? coteHero(cards[0]) : "";
-  const rest = cards.length > 1 ? rankList(cards.slice(1), 1) : "";
-  const pending = !cards.length && !state.hallFailed;
-  const body = pending
-    ? `<p class="note">Lecture des cotes, de 1999 à aujourd'hui…</p>${skeletonRanks(4)}`
-    : cards.length
-      ? `${hero}${rest}`
-      : `<p class="note">Les cotes ne répondent pas. Rouvre la salle dans un instant.</p>`;
-  const mode = (id, label) => `<button class="fav-sort-btn" type="button" data-action="cote-mode" data-mode="${id}" aria-pressed="${state.coteMode === id ? "true" : "false"}">${label}</button>`;
+  const rows = coteEntries();
+  const tri = (id, label) => `<button class="fav-sort-btn" type="button" data-action="cote-sort" data-sort="${id}" aria-pressed="${state.coteSort === id ? "true" : "false"}">${label}</button>`;
+  const familles = COTES_FAMILLES.map(([id, label]) => `
+    <button type="button" data-action="cote-famille" data-famille="${id}" aria-pressed="${state.coteFamille === id ? "true" : "false"}">${label}</button>`).join("");
+  const gens = [["toutes", "Toutes"]];
+  COTES_GENS.forEach(([id, label]) => {
+    if (coteEntries(state.coteFamille, id).length || state.coteGen === id) gens.push([id, label]);
+  });
+  if (coteEntries(state.coteFamille, "autres").length || state.coteGen === "autres") gens.push(["autres", "Autres"]);
+  const generations = gens.map(([id, label]) => `
+    <button type="button" data-action="cote-gen" data-gen="${id}" aria-pressed="${state.coteGen === id ? "true" : "false"}">${label}</button>`).join("");
   const setName = prettyName(state.setDetail?.name || "l'extension");
   const running = Boolean(state.quote?.running);
   const label = running
@@ -1273,14 +1520,17 @@ function cotesHTML() {
           <p class="kicker">Référence</p>
           <h2>Salle des cotes.</h2>
         </div>
-        <p class="lede">Les plus fortes tendances Cardmarket, de 1999 à aujourd'hui. Le mélange reprend les mêmes cartes, dans un autre ordre.</p>
+        <p class="lede">Ce n'est pas la sélection du jour, et l'heure de Paris n'y change rien. Les cartes forment une étagère fixe, cotée sur Cardmarket. Tu peux tout mélanger avec les ETB, coffrets et UPC, ou ne garder qu'une génération.</p>
       </header>
-      <div class="fav-sort" role="group" aria-label="Ordre de la salle">
-        ${mode("tendance", "Par tendance")}
-        ${mode("melange", "Toutes les années")}
-        ${state.coteMode === "melange" ? `<button class="fav-sort-btn" type="button" data-action="cote-shuffle">Mélanger encore</button>` : ""}
+      <div class="fav-sort" role="group" aria-label="Sens de la cote">
+        ${tri("desc", "Plus chères")}
+        ${tri("asc", "Moins chères")}
       </div>
-      <div id="cote-hall">${body}</div>
+      <div class="chip-rail"><div class="series-row cote-filtres" role="group" aria-label="Famille">${familles}</div></div>
+      <div class="chip-rail"><div class="series-row cote-filtres" role="group" aria-label="Génération">${generations}</div></div>
+      <p class="note" id="cote-status">${esc(coteStatus(rows.length))}</p>
+      <div id="cote-hall">${coteCorps(rows)}</div>
+      <div class="foot-row" id="cote-foot">${coteSuite(rows.length)}</div>
     </section>
     <section class="panel">
       <header class="section-head">
@@ -1532,7 +1782,7 @@ function etbHTML() {
         <p class="lede" id="sealed-status">${esc(sealedStatus())}</p>
       </header>
       <div class="sealed-bar">
-        <div class="series-row" role="group" aria-label="Type de coffret">${filters}</div>
+        <div class="chip-rail"><div class="series-row" role="group" aria-label="Type de coffret">${filters}</div></div>
         <div class="sealed-tools">
           <label class="sr-only" for="sealed-q">Filtrer les coffrets</label>
           <input id="sealed-q" type="search" placeholder="Nom d'un coffret" value="${esc(state.sealedQuery)}" autocomplete="off" enterkeyhint="search">
@@ -1573,22 +1823,15 @@ async function loadSealed() {
       state.sealedLoading = false;
       sealedPromise = null;
       if (state.tab === "etb") render();
+      else if (state.tab === "cotes" && state.coteFamille !== "cartes") render();
     }
   })();
   return sealedPromise;
 }
 
-const UNIVERS_KINDS = [
-  ["tous", "Tous"],
-  ["jeu", "Jeux"],
-  ["pack", "Packs"],
-  ["topps", "Topps"],
-  ["autocollant", "Autocollants"],
-  ["panini", "Panini"],
-  ["peluche", "Peluches"],
-  ["figurine", "Figurines"],
-  ["jouet", "Jouets"],
-];
+function universKind(value) {
+  return UNIVERS_KINDS.some(([id]) => id === value && id !== "tous") ? value : "";
+}
 
 function universLabel(kind) {
   return {
@@ -1601,6 +1844,12 @@ function universLabel(kind) {
     figurine: "Figurine",
     jouet: "Jouet",
   }[kind] || "Univers";
+}
+
+function pieceLabel(kind) {
+  if (boxKind(kind)) return sealedLabel(kind);
+  if (universKind(kind)) return universLabel(kind);
+  return "Pièce";
 }
 
 function releasedLabel(value) {
@@ -1621,7 +1870,13 @@ function universRows() {
   const copy = rows.slice();
   const key = (item) => item.released || "9999";
   if (state.universSort === "nom") copy.sort((a, b) => a.name.localeCompare(b.name, "fr"));
-  else if (state.universSort === "cote") copy.sort((a, b) => (b.usd ?? -1) - (a.usd ?? -1));
+  else if (state.universSort === "cote") {
+    const montant = (item) => {
+      const value = universMontant(item);
+      return typeof value === "number" ? value : -1;
+    };
+    copy.sort((a, b) => montant(b) - montant(a) || a.name.localeCompare(b.name, "fr"));
+  }
   else if (state.universSort === "recent") copy.sort((a, b) => key(b).localeCompare(key(a)) || a.name.localeCompare(b.name, "fr"));
   else copy.sort((a, b) => key(a).localeCompare(key(b)) || a.name.localeCompare(b.name, "fr"));
   return copy;
@@ -1641,15 +1896,212 @@ function universStatus() {
   } else if (mode === "unavailable") {
     boosters = "Les boosters sont cotés en dollars TCGPlayer. La conversion est indisponible.";
   }
-  return `${shown} sur ${total}. ${boosters} Le reste est recensé sans cote unitaire.`;
+  return `${shown} sur ${total}. ${boosters} Sans cote TCGPlayer, le prix d'un exemplaire complet s'affiche quand les ventes terminées le donnent, avec la date du relevé.`;
+}
+
+function universMontant(item) {
+  if (typeof item?.usd === "number") return item.usd;
+  if (typeof item?.sale?.usd === "number") return item.sale.usd;
+  return null;
+}
+
+function venteNote(item) {
+  const sale = item?.sale;
+  if (!sale || typeof sale.usd !== "number") return "Pas de cote unitaire pour cette ligne.";
+  const when = formatDay(sale.at ? `${sale.at}T12:00:00` : "");
+  const grade = sale.kind === "neuf"
+    ? "exemplaire neuf"
+    : sale.kind === "sans-boite"
+      ? "exemplaire sans boîte"
+      : "exemplaire complet";
+  const date = when ? ` Vérifiée le ${when}.` : "";
+  const mode = usdDisplayMode();
+  let change = "";
+  if (mode === "pending") change = " Conversion en cours.";
+  else if (mode === "unavailable") change = " La conversion est indisponible.";
+  else if (mode === "converted") change = activeCurrency() === "JPY" ? " Affiché en yens." : " Affiché en euros.";
+  return `Prix d'un ${grade}, d'après les ventes terminées.${date}${change} Pas une offre.`;
+}
+
+function loadPhotos() {
+  try {
+    const raw = lireCabinet("photos");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    Object.entries(raw).forEach(([id, value]) => {
+      if (!cleanId(id, "") || !value || typeof value !== "object") return;
+      const url = typeof value.url === "string" && value.url.startsWith("https://archives.bulbagarden.net/") ? value.url : "";
+      const rejected = Array.isArray(value.rejected)
+        ? value.rejected.filter((row) => typeof row === "string" && row.startsWith("https://")).slice(-12)
+        : [];
+      if (url || rejected.length) out[id] = { url, rejected };
+    });
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function savePhotos() {
+  noterStockage(ecrireCabinet("photos", state.photos));
+}
+
+function nomFichier(url) {
+  try {
+    const file = decodeURIComponent(new URL(url).pathname).split("/").pop() || "";
+    return file.replace(/^\d+px-/i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function photoChoisie(id) {
+  const row = state.photos?.[String(id)];
+  return row && typeof row.url === "string" && row.url.startsWith("https://archives.bulbagarden.net/") ? row.url : "";
+}
+
+function universSrc(item) {
+  const choisi = photoChoisie(item?.id);
+  if (choisi) return choisi;
+  if (typeof item?.image === "string" && item.image.startsWith("https://")) return item.image;
+  if (/^\d+$/.test(String(item?.id))) return `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_400x400.jpg`;
+  return "";
+}
+
+function normPhoto(value) {
+  return String(value || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function pageUtile(title, query) {
+  const page = normPhoto(title);
+  const asked = normPhoto(query);
+  const extras = page.match(/\b\d+\b/g) || [];
+  const wanted = new Set(asked.match(/\b\d+\b/g) || []);
+  if (extras.some((num) => !wanted.has(num))) return false;
+  if (/logo|icon|symbol|flag/.test(page)) return false;
+  const tokens = asked.split(" ").filter((token) => token.length >= 5);
+  if (!tokens.length) return false;
+  const hits = tokens.filter((token) => page.includes(token)).length;
+  return hits >= 1 && hits >= Math.ceil(tokens.length / 3);
+}
+
+function fichierUtile(name) {
+  const file = String(name || "").toLowerCase();
+  if (/\.(svg|gif|pdf)$/.test(file)) return false;
+  if (/logo|icon|flag|symbol|stub|sprite|^spr|title|wordmark|button|favicon/.test(file)) return false;
+  return /boxart|box|plush|figure|toy|pack|machine|photo/.test(file) || /\.(jpe?g|png|webp)$/.test(file);
+}
+
+async function bulbQuery(params) {
+  const url = new URL("https://bulbapedia.bulbagarden.net/w/api.php");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("photo");
+  return response.json();
+}
+
+function requetePhoto(item) {
+  return String(item.id)
+    .replace(/^(game|line|topps|stick|merlin|panini)-/, "")
+    .replace(/pok-mon/g, "pokemon")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function chercherPhotos(item) {
+  const query = requetePhoto(item);
+  const data = await bulbQuery({
+    action: "query",
+    generator: "search",
+    gsrsearch: query,
+    gsrlimit: "8",
+    prop: "pageimages",
+    pithumbsize: "400",
+    piprop: "thumbnail|name",
+  });
+  const tokens = normPhoto(query).split(" ").filter((token) => token.length >= 5);
+  const rows = [];
+  Object.values(data.query?.pages || {}).forEach((page) => {
+    if (!pageUtile(page.title, query)) return;
+    const file = page.pageimage || "";
+    const url = page.thumbnail?.source || "";
+    if (!file || !url.startsWith("https://archives.bulbagarden.net/")) return;
+    if (!fichierUtile(file)) return;
+    const hits = tokens.filter((token) => normPhoto(page.title).includes(token)).length;
+    rows.push({ url, hits, box: /boxart/i.test(file) ? 1 : 0 });
+  });
+  rows.sort((a, b) => b.hits - a.hits || b.box - a.box);
+  return rows.map((row) => row.url);
+}
+
+function imageCharge(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth > 40 && img.naturalHeight > 40);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
+let photoToken = 0;
+
+async function autrePhoto(id) {
+  const item = (state.univers || []).find((row) => String(row.id) === String(id));
+  if (!item) return;
+  const token = ++photoToken;
+  state.photoBusy = String(id);
+  state.photoNote = "";
+  paintOpenProduct();
+  try {
+    const suivantes = await chercherPhotos(item);
+    if (token !== photoToken) return;
+    const deja = new Set((state.photos[String(id)]?.rejected || []).map(nomFichier));
+    const actuel = nomFichier(universSrc(item));
+    if (actuel) deja.add(actuel);
+    let trouve = "";
+    for (const url of suivantes) {
+      if (deja.has(nomFichier(url))) continue;
+      if (await imageCharge(url)) {
+        trouve = url;
+        break;
+      }
+    }
+    if (token !== photoToken) return;
+    if (!trouve) {
+      state.photoNote = "Pas d'autre photo sur Bulbapedia.";
+    } else {
+      const rejected = [...(state.photos[String(id)]?.rejected || [])];
+      const courante = universSrc(item);
+      if (courante.startsWith("https://") && !rejected.includes(courante)) rejected.push(courante);
+      state.photos[String(id)] = { url: trouve, rejected: rejected.slice(-12) };
+      savePhotos();
+      const ligne = state.collection.items.find((row) => row.id === String(id) && universKind(row.box));
+      if (ligne && imagePiece(trouve)) {
+        ligne.image = trouve;
+        saveCollection();
+        const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(String(id)) : String(id);
+        document.querySelectorAll(`[data-card="${safe}"] img.shot`).forEach((img) => { img.src = trouve; });
+      }
+      state.photoNote = "Photo changée sur ce compte.";
+    }
+  } catch {
+    if (token === photoToken) state.photoNote = "Bulbapedia ne répond pas.";
+  } finally {
+    if (token === photoToken) {
+      state.photoBusy = "";
+      paintOpenProduct();
+      if (state.tab === "univers") paintUnivers();
+    }
+  }
 }
 
 function universFace(item) {
   const label = esc(universLabel(item.kind));
-  if (/^\d+$/.test(String(item.id))) {
-    const src = `https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg`;
-    return `<span class="art is-box" data-label="${label}"><img class="shot" src="${src}" alt="" decoding="async"></span>`;
-  }
+  const src = universSrc(item);
+  if (src) return `<span class="art is-box" data-label="${label}"><img class="shot" src="${esc(src)}" alt="" decoding="async"></span>`;
   const mark = esc(initials(item.name));
   return `<span class="art is-box" data-label="${label}"><span class="monogram">${mark}</span></span>`;
 }
@@ -1662,7 +2114,7 @@ function universTiles() {
     if (item.set) bits.push(item.set);
     const day = releasedLabel(item.released);
     if (day) bits.push(day);
-    const price = usdHTML(item.usd);
+    const price = usdHTML(universMontant(item));
     return `
       <article class="tile univers-tile">
         ${universFace(item)}
@@ -1728,9 +2180,9 @@ function universHTML() {
         </div>
         <p class="lede" id="univers-status">${esc(universStatus())}</p>
       </header>
-      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle.</p>
+      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle. La photo vient de Bulbapedia quand la page en a une. Sinon, les initiales restent.</p>
       <div class="sealed-bar">
-        <div class="series-row" role="group" aria-label="Famille">${filters}</div>
+        <div class="chip-rail"><div class="series-row" role="group" aria-label="Famille">${filters}</div></div>
         <div class="sealed-tools">
           <label class="sr-only" for="univers-q">Filtrer l'univers</label>
           <input id="univers-q" type="search" placeholder="Nom d'un jeu ou d'un jouet" value="${esc(state.universQuery)}" autocomplete="off" enterkeyhint="search">
@@ -1748,24 +2200,33 @@ function universHTML() {
     </section>`;
 }
 
+let universPromise = null;
+
 async function loadUnivers() {
-  if (state.univers || state.universLoading) return;
+  if (state.univers) return state.univers;
+  if (universPromise) return universPromise;
   state.universLoading = true;
   state.universError = "";
   if (state.tab === "univers") render();
-  try {
-    const response = await fetch("./univers.json");
-    if (!response.ok) throw new Error(String(response.status));
-    const data = await response.json();
-    state.univers = Array.isArray(data.products) ? data.products : [];
-    state.universAsOf = typeof data.asOf === "string" ? data.asOf : "";
-    state.universError = "";
-  } catch {
-    state.universError = "L'univers Pokémon n'a pas pu être chargé.";
-  } finally {
-    state.universLoading = false;
-    if (state.tab === "univers") render();
-  }
+  universPromise = (async () => {
+    try {
+      const response = await fetch("./univers.json");
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      state.univers = Array.isArray(data.products) ? data.products : [];
+      state.universAsOf = typeof data.asOf === "string" ? data.asOf : "";
+      state.universError = "";
+      return state.univers;
+    } catch {
+      state.universError = "L'univers Pokémon n'a pas pu être chargé.";
+      return null;
+    } finally {
+      state.universLoading = false;
+      universPromise = null;
+      if (state.tab === "univers") render();
+    }
+  })();
+  return universPromise;
 }
 
 
@@ -1792,11 +2253,47 @@ function loadBinder() {
 }
 
 function saveBinder() {
-  noterStockage(ecrireCabinet("classeur", {
+  const ok = ecrireCabinet("classeur", {
     page: state.binder.page,
     pages: state.binder.pages,
     cards: state.binder.cards,
-  }));
+  });
+  noterStockage(ok);
+  return ok !== false;
+}
+
+function migrerFavoris() {
+  const favs = state.favorites.filter((item) => item && cleanId(item.id, "") && item.name);
+  if (!favs.length) return;
+  let ajoute = false;
+  favs.forEach((fav) => {
+    const id = cleanId(fav.id, "");
+    if (!id || binderFind(id)) return;
+    let hole = firstHole(0);
+    if (!hole) {
+      state.binder.pages.push(emptyPage());
+      hole = { page: state.binder.pages.length - 1, slot: 0 };
+    }
+    state.binder.pages[hole.page][hole.slot] = id;
+    state.binder.cards[id] = {
+      id,
+      name: fav.name,
+      image: fav.image || "",
+      setName: fav.setName || fav.set?.name || "",
+      localId: fav.localId || "",
+      rarity: fav.rarity || "",
+      variants: variantFlags(fav),
+      setTotal: fav.setTotal || null,
+      trend: typeof fav.trend === "number" ? fav.trend : (typeof fav.pricing?.cardmarket?.trend === "number" ? fav.pricing.cardmarket.trend : null),
+      pricing: fav.pricing || null,
+      lang: MARKETS[fav.lang] ? fav.lang : "fr",
+    };
+    ajoute = true;
+  });
+  if (!favs.every((fav) => binderFind(cleanId(fav.id, "")))) return;
+  if (ajoute && !saveBinder()) return;
+  state.favorites = [];
+  saveFavs();
 }
 
 function binderFind(id) {
@@ -2024,8 +2521,16 @@ function boutonBug() {
   return `<button class="icon-btn signaler" type="button" data-signaler aria-label="Signaler un problème"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 8c0-1.7 1.3-3 3-3s3 1.3 3 3"/><path d="M8 9.5h8"/><ellipse cx="12" cy="14" rx="4.2" ry="5"/><path d="M9.2 6.2 7 3.5M14.8 6.2 17 3.5"/><path d="M8 12 4.5 10.5M8 15H4M8.4 17.8 5.2 20.5"/><path d="M16 12l3.5-1.5M16 15h4M15.6 17.8l3.2 2.7"/></svg></button>`;
 }
 
-function reliefHTML(card, slot) {
+function reliefHTML(card, mode) {
   const kind = foilKind(card);
+  const lang = card.lang || state.market;
+  const found = binderFind(card.id);
+  const garder = found
+    ? `<button class="btn" type="button" data-binder="remove" data-slot="${found.slot}" data-page="${found.page}">Retirer du classeur</button>`
+    : `<button class="btn solid" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(lang)}">Ranger dans le classeur</button>`;
+  const suivante = mode === "random"
+    ? `<button class="btn solid next-card" type="button" data-action="random-next">Suivante</button>`
+    : "";
   return `
     <div class="relief">
       <div class="relief-tools">${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>
@@ -2041,9 +2546,27 @@ function reliefHTML(card, slot) {
         <p class="relief-name">${esc(prettyName(card.name))}</p>
         <p class="hint">${foilHint(kind)}</p>
         <div class="fiche-actions">
-          <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">Voir la fiche</button>
-          <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
+          ${suivante}
+          ${garder}
+          <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(lang)}">Voir la fiche</button>
         </div>
+      </div>
+    </div>`;
+}
+
+function reliefAttente() {
+  return `
+    <div class="relief">
+      <div class="relief-tools">${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>
+      <div class="relief-stage">
+        <div class="stage" data-tilt data-foil="papier" data-art="classic">
+          <span class="shine" aria-hidden="true"></span>
+        </div>
+        <span class="relief-shadow" aria-hidden="true"></span>
+      </div>
+      <div class="relief-copy">
+        <p class="relief-name">Ouverture…</p>
+        <p class="hint">Penche la carte : la lumière suit le mouvement.</p>
       </div>
     </div>`;
 }
@@ -2277,23 +2800,59 @@ function applyReliefFoil(dialog, card) {
   holo.dataset.art = art;
 }
 
-async function refreshReliefFoil(id, lang) {
+function carteConnue(id, lang) {
+  const langue = lang || state.market || "fr";
+  const cached = cache.get(cacheKey(id, langue)) || cache.get(cacheKey(id, state.market)) || cache.get(cacheKey(id, "fr"));
+  if (cached?.name) return cached;
+  const ranger = state.binder.cards[id];
+  if (ranger?.name) return ranger;
+  const lists = [state.iconics, state.setCards, state.searchCards, state.hallCards];
+  for (const list of lists) {
+    const found = (list || []).find((card) => card?.id === id && card.name && (!card.lang || card.lang === langue));
+    if (found) return found;
+  }
+  for (const list of lists) {
+    const found = (list || []).find((card) => card?.id === id && card.name);
+    if (found) return found;
+  }
+  const coll = state.collection.items.find((item) => item.id === id && !item.box && item.name);
+  return coll || null;
+}
+
+async function completerRelief(id, lang) {
+  const dialog = document.getElementById("relief");
   try {
     const full = await getCard(id, lang);
+    if (!dialog?.open || dialog.dataset.card !== id) return;
     const flags = variantFlags(full);
     const current = state.binder.cards[id];
-    if (!current || !flags) return;
-    state.binder.cards[id] = {
-      ...current,
-      rarity: full.rarity || current.rarity || "",
-      variants: flags,
-    };
-    saveBinder();
-    const dialog = document.getElementById("relief");
-    if (dialog?.open && dialog.dataset.card === id) applyReliefFoil(dialog, state.binder.cards[id]);
-    if (state.tab === "classeur") paintBinder();
+    if (current) {
+      state.binder.cards[id] = {
+        ...current,
+        rarity: full.rarity || current.rarity || "",
+        variants: flags || current.variants || null,
+        image: full.image || current.image || "",
+        name: full.name || current.name,
+      };
+      saveBinder();
+      if (state.tab === "classeur") paintBinder();
+    }
+    const card = { ...full, lang: full.lang || lang };
+    const img = dialog.querySelector("[data-tilt] img");
+    if (!img?.getAttribute("src")) {
+      const mode = dialog.dataset.mode === "random" ? "random" : "";
+      dialog.innerHTML = reliefHTML(card, mode);
+      wakeScans(dialog);
+      resetFoilTilt(dialog.querySelector("[data-tilt]"));
+      return;
+    }
+    applyReliefFoil(dialog, card);
+    const name = dialog.querySelector(".relief-name");
+    if (name && card.name) name.textContent = prettyName(card.name);
   } catch {
-    /* Sans TCGdex, la carte reste en lumière papier. */
+    if (!dialog?.open || dialog.dataset.card !== id) return;
+    const name = dialog.querySelector(".relief-name");
+    if (name && name.textContent === "Ouverture…") name.textContent = "Cette carte ne s'ouvre pas.";
   }
 }
 
@@ -2323,20 +2882,34 @@ function leaveRelief(after) {
   }, 240);
 }
 
-function openRelief(id, slot) {
-  const card = state.binder.cards[id];
+function openRelief(id, _slot, lang, mode) {
+  requestFoilMotion();
   const dialog = document.getElementById("relief");
-  if (!card || !dialog) return;
-  if (foilKind(card) !== "papier") requestFoilMotion();
+  const safe = cleanId(id, "");
+  if (!safe || !dialog) return;
+  const langue = lang || state.binder.cards[safe]?.lang || state.market;
+  const modeRelief = mode === "random" ? "random" : "";
+  const fiche = document.getElementById("fiche");
+  if (fiche?.open) fiche.close();
   reliefLeaving = false;
   dialog.classList.remove("is-leaving");
-  dialog.dataset.card = card.id;
-  dialog.innerHTML = reliefHTML(card, slot);
-  wakeScans(dialog);
-  resetFoilTilt(dialog.querySelector("[data-tilt]"));
+  dialog.dataset.card = safe;
+  dialog.dataset.lang = langue;
+  dialog.dataset.mode = modeRelief;
+  const known = carteConnue(safe, langue);
   lockSheet();
+  if (known?.name) {
+    dialog.innerHTML = reliefHTML({ ...known, id: safe, lang: known.lang || langue }, modeRelief);
+    wakeScans(dialog);
+    resetFoilTilt(dialog.querySelector("[data-tilt]"));
+    if (!dialog.open) dialog.showModal();
+    if (!known.image || !variantFlags(known)) completerRelief(safe, langue);
+    return;
+  }
+  dialog.innerHTML = reliefAttente();
+  resetFoilTilt(dialog.querySelector("[data-tilt]"));
   if (!dialog.open) dialog.showModal();
-  if (!variantFlags(card)) refreshReliefFoil(card.id, card.lang || state.market);
+  completerRelief(safe, langue);
 }
 
 let binderTurning = false;
@@ -2613,6 +3186,13 @@ function looseNote(value) {
   return String(value || "").replace(/[\u0000-\u001F]/g, "").slice(0, NOTE_MAX);
 }
 
+function imagePiece(url) {
+  if (typeof url !== "string") return "";
+  if (url.startsWith("https://archives.bulbagarden.net/")) return url;
+  if (/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(url)) return url;
+  return "";
+}
+
 function loadCollection() {
   try {
     const raw = lireCabinet("collection") || {};
@@ -2622,22 +3202,27 @@ function loadCollection() {
       named: raw.named !== false,
       shareFavs: raw.shareFavs === true,
       items: items.filter((item) => item && cleanId(item.id, "") && item.name).slice(0, COLL_MAX).flatMap((item) => {
-        const box = boxKind(item.box);
-        if (box && !/^\d+$/.test(item.id)) return [];
+        const sealed = boxKind(item.box);
+        const univers = universKind(item.box);
+        if (item.box && !sealed && !univers) return [];
+        if (sealed && !/^\d+$/.test(item.id)) return [];
+        const piece = sealed || univers;
         const row = {
           id: item.id,
-          name: looseNote(item.name).trim() || (box ? sealedLabel(box) : "Carte"),
-          image: box
+          name: looseNote(item.name).trim() || (piece ? pieceLabel(piece) : "Carte"),
+          image: sealed
             ? boxShot(item.id)
-            : (typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : ""),
+            : (univers
+              ? (imagePiece(item.image) || (/^\d+$/.test(item.id) ? boxShot(item.id) : ""))
+              : (typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : "")),
           setName: looseNote(item.setName).trim(),
-          localId: box ? "" : looseNote(item.localId).trim().slice(0, 16),
+          localId: piece ? "" : looseNote(item.localId).trim().slice(0, 16),
           note: looseNote(item.note).trim(),
-          trend: box || typeof item.trend !== "number" || item.trend < 0 ? null : item.trend,
-          lang: box ? "fr" : (MARKETS[item.lang] ? item.lang : "fr"),
+          trend: piece || typeof item.trend !== "number" || item.trend < 0 ? null : item.trend,
+          lang: piece ? "fr" : (MARKETS[item.lang] ? item.lang : "fr"),
         };
-        if (box) {
-          row.box = box;
+        if (piece) {
+          row.box = piece;
           row.usd = typeof item.usd === "number" && item.usd >= 0 ? item.usd : null;
         }
         return [row];
@@ -2705,6 +3290,32 @@ function addBox(item) {
   saveCollection();
 }
 
+function collectionFromUnivers(item, note = "") {
+  const id = String(item.id);
+  const kind = universKind(item.kind || item.box);
+  const montant = universMontant(item);
+  return {
+    id,
+    name: looseNote(item.name).trim() || universLabel(kind),
+    image: imagePiece(universSrc(item)),
+    setName: looseNote(item.set || item.setName || "").trim(),
+    localId: "",
+    note: looseNote(note).trim(),
+    lang: "fr",
+    trend: null,
+    box: kind,
+    usd: typeof montant === "number" && montant >= 0 ? montant : null,
+  };
+}
+
+function addUnivers(item) {
+  const id = cleanId(String(item?.id ?? ""), "");
+  if (!id || !universKind(item?.kind)) return;
+  if (inCollection(id) || state.collection.items.length >= COLL_MAX) return;
+  state.collection.items.unshift(collectionFromUnivers({ ...item, id }));
+  saveCollection();
+}
+
 function removeFromCollection(id, lang = state.market) {
   const key = String(id ?? "");
   state.collection.items = state.collection.items.filter((item) => {
@@ -2749,9 +3360,8 @@ function shareRow(item, withNote) {
 function sharePayload() {
   const mine = state.collection;
   const items = mine.items.map((item) => shareRow(item, true));
-  const favs = mine.shareFavs ? state.favorites.map((item) => shareRow(item, false)) : [];
-  if (!items.length && !favs.length) return null;
-  return { v: 1, n: mine.named ? looseName(mine.name).trim() : "", items, favs };
+  if (!items.length) return null;
+  return { v: 1, n: mine.named ? looseName(mine.name).trim() : "", items, favs: [] };
 }
 
 async function encodeShare(payload) {
@@ -2771,23 +3381,26 @@ function sanitizeRows(rows, withNote) {
     const id = cleanId(row?.i, "");
     const name = looseNote(row?.a).trim();
     if (!id || !name) return [];
-    const box = boxKind(row?.k);
-    if (box && !/^\d+$/.test(id)) return [];
+    const sealed = boxKind(row?.k);
+    const univers = universKind(row?.k);
+    if (row?.k && !sealed && !univers) return [];
+    if (sealed && !/^\d+$/.test(id)) return [];
+    const piece = sealed || univers;
     const usd = typeof row?.u === "number" && Number.isFinite(row.u) && row.u >= 0 && row.u < 1e7
       ? Math.round(row.u * 100) / 100
       : null;
     const item = {
       id,
       name,
-      image: box ? boxShot(id) : "",
+      image: sealed ? boxShot(id) : (univers && /^\d+$/.test(id) ? boxShot(id) : ""),
       setName: looseNote(row?.s).trim(),
-      localId: box ? "" : looseNote(row?.l).trim().slice(0, 16),
+      localId: piece ? "" : looseNote(row?.l).trim().slice(0, 16),
       note: withNote ? looseNote(row?.c).trim() : "",
-      lang: box ? "fr" : (MARKETS[row?.g] ? row.g : "fr"),
+      lang: piece ? "fr" : (MARKETS[row?.g] ? row.g : "fr"),
       trend: null,
     };
-    if (box) {
-      item.box = box;
+    if (piece) {
+      item.box = piece;
       item.usd = usd;
     }
     return [item];
@@ -2818,9 +3431,15 @@ async function decodeShare(token) {
 }
 
 function collBox(item, editable) {
-  const bits = [sealedLabel(item.box)];
+  const label = pieceLabel(item.box);
+  const family = universKind(item.box) ? "univers" : "sealed";
+  const bits = [label];
   if (item.setName) bits.push(item.setName);
   const price = boxPriceHTML(item.usd);
+  const src = item.image || (family === "sealed" || /^\d+$/.test(item.id) ? boxShot(item.id) : "");
+  const art = src
+    ? `<img class="shot" src="${esc(src)}" alt="${esc(item.name)}" decoding="async">`
+    : `<span class="monogram">${esc(initials(item.name))}</span>`;
   const note = editable
     ? `<label class="coll-label">Commentaire
         <textarea data-coll-note="${esc(item.id)}" data-lang="fr" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement.">${esc(item.note || "")}</textarea>
@@ -2829,13 +3448,11 @@ function collBox(item, editable) {
     : (item.note ? `<p class="coll-note">${esc(item.note)}</p>` : "");
   return `
     <article class="coll-card" data-card="${esc(item.id)}" data-box="${esc(item.box)}">
-      <button class="coll-open" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
-        <span class="art is-box" data-label="${esc(sealedLabel(item.box))}">
-          <img class="shot" src="${esc(item.image || boxShot(item.id))}" alt="${esc(item.name)}" decoding="async">
-        </span>
+      <button class="coll-open" type="button" data-action="product" data-family="${family}" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
+        <span class="art is-box" data-label="${esc(label)}">${art}</span>
       </button>
       <div class="coll-body">
-        <button class="coll-title" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">${esc(item.name)}</button>
+        <button class="coll-title" type="button" data-action="product" data-family="${family}" data-id="${esc(item.id)}">${esc(item.name)}</button>
         <p class="tile-meta">${esc(bits.join(" · "))}</p>
         <p class="price-line">${price}</p>
         ${note}
@@ -2952,15 +3569,29 @@ function collectionWorth() {
 
 function worthNote(worth) {
   const { cards, boxes, boxKnown, pending } = worth;
+  const hasUnivers = state.collection.items.some((item) => universKind(item.box));
+  const hasSealed = state.collection.items.some((item) => boxKind(item.box));
   if (!boxes) return "Somme des cotes Cardmarket, en euros. Chaque carte compte une fois. Pas un prix de vente.";
-  if (!cards) {
-    if (pending) return "Cotes TCGPlayer en dollars. Conversion en cours. Pas une cote Cardmarket. Pas un prix de vente.";
-    if (!boxKnown) return "Cotes TCGPlayer en dollars. La conversion est indisponible. Pas une cote Cardmarket. Pas un prix de vente.";
-    return "Somme des cotes TCGPlayer, en euros après conversion. Chaque coffret compte une fois. Pas une cote Cardmarket. Pas un prix de vente.";
+  if (!hasUnivers) {
+    if (!cards) {
+      if (pending) return "Cotes TCGPlayer en dollars. Conversion en cours. Pas une cote Cardmarket. Pas un prix de vente.";
+      if (!boxKnown) return "Cotes TCGPlayer en dollars. La conversion est indisponible. Pas une cote Cardmarket. Pas un prix de vente.";
+      return "Somme des cotes TCGPlayer, en euros après conversion. Chaque coffret compte une fois. Pas une cote Cardmarket. Pas un prix de vente.";
+    }
+    if (pending && !boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+    if (!boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+    return "Les cartes sont en cotes Cardmarket. Les ETB, coffrets et UPC sont en cotes TCGPlayer, converties en euros. Chaque pièce compte une fois. Pas un prix de vente.";
   }
-  if (pending && !boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
-  if (!boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
-  return "Les cartes sont en cotes Cardmarket. Les ETB, coffrets et UPC sont en cotes TCGPlayer, converties en euros. Chaque pièce compte une fois. Pas un prix de vente.";
+  const anyUsd = state.collection.items.some((item) => item.box && typeof item.usd === "number");
+  if (!cards && !hasSealed) {
+    if (pending) return "Prix en dollars. Conversion en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+    if (!anyUsd) return "Pas de cote pour ces pièces. Chaque pièce compte une fois. Pas un prix de vente.";
+    if (!boxKnown) return "Prix en dollars. La conversion est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+    return "Somme des prix en euros après conversion. Chaque pièce compte une fois. Pas un prix de vente.";
+  }
+  if (pending && !boxKnown) return "Les cartes restent en cotes Cardmarket. La conversion du reste est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+  if (anyUsd && !boxKnown) return "Les cartes restent en cotes Cardmarket. La conversion du reste est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+  return "Les cartes restent en cotes Cardmarket. Le reste est converti depuis les dollars. Chaque pièce compte une fois. Pas un prix de vente.";
 }
 
 function worthHTML() {
@@ -3010,7 +3641,15 @@ function paintCollectionPrices() {
     const titre = node.querySelector(".coll-title");
     if (titre) titre.textContent = item.name;
     const meta = node.querySelector(".tile-meta");
-    if (meta) meta.textContent = [sealedLabel(item.box), item.setName].filter(Boolean).join(" · ");
+    if (meta) meta.textContent = [pieceLabel(item.box), item.setName].filter(Boolean).join(" · ");
+    const art = node.querySelector(".art");
+    if (art && universKind(item.box)) {
+      const src = item.image || "";
+      const img = art.querySelector("img.shot");
+      if (src && img) img.src = src;
+      else if (src) art.innerHTML = `<img class="shot" src="${esc(src)}" alt="" decoding="async">`;
+      else if (img) art.innerHTML = `<span class="monogram">${esc(initials(item.name))}</span>`;
+    }
   });
 }
 
@@ -3022,19 +3661,36 @@ function collectionHasBox() {
 async function refreshCollection() {
   if (state.visit || state.tab !== "collection" || !state.collection.items.length) return;
   const token = ++collEpoch;
-  const boxes = state.collection.items.filter((item) => item.box);
+  const pieces = state.collection.items.filter((item) => item.box);
+  const sealed = pieces.filter((item) => boxKind(item.box));
+  const univers = pieces.filter((item) => universKind(item.box));
   const cards = state.collection.items.filter((item) => !item.box);
-  if (boxes.length) {
-    await Promise.all([loadSealed(), loadFx()]);
+  if (pieces.length) {
+    const jobs = [];
+    if (sealed.length) jobs.push(loadSealed());
+    if (univers.length) jobs.push(loadUnivers());
+    jobs.push(loadFx());
+    await Promise.all(jobs);
     if (token !== collEpoch || state.visit || state.tab !== "collection") return;
-    boxes.forEach((item) => {
-      const row = (state.sealed || []).find((sealed) => String(sealed.id) === item.id);
+    sealed.forEach((item) => {
+      const row = (state.sealed || []).find((entry) => String(entry.id) === item.id);
       if (!row) return;
       if (boxKind(row.kind)) item.box = row.kind;
       item.usd = typeof row.usd === "number" && row.usd >= 0 ? row.usd : null;
       if (row.name) item.name = looseNote(row.name).trim() || item.name;
       if (row.set) item.setName = looseNote(row.set).trim();
       item.image = boxShot(item.id);
+    });
+    univers.forEach((item) => {
+      const row = (state.univers || []).find((entry) => String(entry.id) === item.id);
+      if (!row) return;
+      if (universKind(row.kind)) item.box = row.kind;
+      const montant = universMontant(row);
+      item.usd = typeof montant === "number" && montant >= 0 ? montant : null;
+      if (row.name) item.name = looseNote(row.name).trim() || item.name;
+      if (row.set) item.setName = looseNote(row.set).trim();
+      const src = imagePiece(universSrc(row));
+      if (src) item.image = src;
     });
   }
   await pool(cards, 4, async (item) => {
@@ -3059,7 +3715,7 @@ function collectionHTML() {
   const mine = state.collection;
   const empty = mine.items.length
     ? ""
-    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Depuis une fiche, ajoute une carte, une ETB, un coffret ou une UPC.</p></div>`;
+    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Depuis une fiche, ajoute une carte, un jeu, une peluche ou un coffret.</p></div>`;
   return `
     <section class="panel">
       <header class="section-head">
@@ -3067,7 +3723,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Tes cartes, tes ETB, tes coffrets et tes UPC. Un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
+        <p class="lede">Tes cartes, tes jeux, tes peluches et tes coffrets. Un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -3075,7 +3731,6 @@ function collectionHTML() {
           <input id="coll-name" type="text" maxlength="24" value="${esc(mine.name)}" placeholder="Un prénom suffit" autocomplete="nickname">
         </label>
         <label class="coll-check"><input id="coll-named" type="checkbox" ${mine.named ? "checked" : ""}> Montrer ce nom dans le lien</label>
-        <label class="coll-check"><input id="coll-favs" type="checkbox" ${mine.shareFavs ? "checked" : ""}> Joindre mes favoris au lien</label>
         <button class="btn solid" type="button" data-action="coll-share">Copier le lien</button>
         <p class="note" id="coll-status">${esc(state.shareNote)}</p>
       </form>
@@ -3088,7 +3743,24 @@ function collectionHTML() {
 async function hydrateVisit() {
   if (!state.visit || state.visit.error || state.tab !== "collection") return;
   const token = ++visitEpoch;
-  const rows = [...(state.visit.items || []), ...(state.visit.favs || [])].filter((row) => !row.box);
+  const all = [...(state.visit.items || []), ...(state.visit.favs || [])];
+  const univers = all.filter((row) => universKind(row.box));
+  if (univers.length) {
+    await Promise.all([loadUnivers(), loadFx()]);
+    if (token !== visitEpoch || state.tab !== "collection" || !state.visit) return;
+    univers.forEach((row) => {
+      const item = (state.univers || []).find((entry) => String(entry.id) === row.id);
+      if (!item) return;
+      const src = imagePiece(universSrc(item));
+      if (src) row.image = src;
+      const montant = universMontant(item);
+      if (typeof montant === "number" && montant >= 0) row.usd = montant;
+      if (item.name) row.name = looseNote(item.name).trim() || row.name;
+      if (item.set) row.setName = looseNote(item.set).trim();
+    });
+    paintCollectionPrices();
+  }
+  const rows = all.filter((row) => !row.box);
   await pool(rows, 4, async (row) => {
     try {
       const full = await getCard(row.id, row.lang || "fr");
@@ -3115,7 +3787,7 @@ async function copyCollectionLink() {
   const status = document.getElementById("coll-status");
   const payload = sharePayload();
   if (!payload) {
-    state.shareNote = "Ajoute une carte ou un coffret, ou coche les favoris, avant de copier le lien.";
+    state.shareNote = "Ajoute une pièce avant de copier le lien.";
     if (status) status.textContent = state.shareNote;
     return;
   }
@@ -3178,7 +3850,11 @@ function render() {
     hydrateBinderScans();
   }
   else if (state.tab === "collection") app.innerHTML = collectionHTML();
-  else app.innerHTML = favorisHTML();
+  else {
+    app.innerHTML = binderHTML();
+    hydrateBinderFoils();
+    hydrateBinderScans();
+  }
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
   watchMore();
@@ -3216,6 +3892,12 @@ function growPage(kind) {
     state.universPage += 1;
     paintUnivers();
     wakeScans(document.getElementById("app") || document);
+    return;
+  }
+  if (kind === "cotes") {
+    if (state.cotePage * PAGE_SIZE >= coteEntries().length) return;
+    state.cotePage += 1;
+    paintCotes();
   }
 }
 
@@ -3278,6 +3960,9 @@ function risePage() {
 }
 
 function setTab(tab) {
+  if (tab === "favoris") tab = "classeur";
+  const relief = document.getElementById("relief");
+  if (relief?.open) relief.close();
   const changed = TABS.includes(tab) && tab !== state.tab;
   if (tab !== "collection") {
     const url = new URL(location.href);
@@ -3287,13 +3972,12 @@ function setTab(tab) {
       history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
   }
-  if ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD") loadFx();
+  if (tab === "cotes" || ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD")) loadFx();
   rememberTab(tab);
   render();
   if (changed) risePage();
   window.scrollTo(0, 0);
   if (tab === "extensions") selectSeries(state.browseSeriesId);
-  if (tab === "favoris") refreshFavs();
   if (tab === "collection") {
     hydrateVisit();
     refreshCollection();
@@ -3307,7 +3991,11 @@ function setTab(tab) {
     loadUnivers();
     settleUsdFx("univers");
   }
-  if (tab === "cotes") loadHall();
+  if (tab === "cotes") {
+    loadHall();
+    loadSealed();
+    settleUsdFx("cotes");
+  }
 }
 
 async function loadIconics() {
@@ -3689,7 +4377,7 @@ function ficheBar() {
 function nextRandomCard() {
   const poolCards = state.setCards.length ? state.setCards : activeCards();
   if (!poolCards.length) return null;
-  const current = document.getElementById("fiche")?.dataset.current || "";
+  const current = document.getElementById("relief")?.dataset.card || document.getElementById("fiche")?.dataset.current || "";
   const others = poolCards.filter((card) => card.id !== current);
   const source = others.length ? others : poolCards;
   return source[Math.floor(Math.random() * source.length)];
@@ -3698,7 +4386,6 @@ function nextRandomCard() {
 function ficheHTML(card) {
   const types = Array.isArray(card.types) ? card.types : [];
   const when = formatDay(card.pricing?.cardmarket?.updated);
-  const favOn = isFav(card.id, card.lang || state.market);
   const collOn = inCollection(card.id, card.lang || state.market);
   return `
     <article class="fiche">
@@ -3730,8 +4417,7 @@ function ficheHTML(card) {
         ${card.illustrator ? `<p class="hint">Illustré par ${esc(card.illustrator)}.</p>` : ""}
         ${Array.isArray(card.dexId) && card.dexId.length ? `<p class="hint">Pokédex n° ${esc(card.dexId.join(", "))}</p>` : ""}
         <div class="fiche-actions">
-          <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
-          <button class="btn" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
+          <button class="btn solid" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
           <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" ${!collOn && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${collOn ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
         </div>
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
@@ -3751,17 +4437,29 @@ function productHTML(item, family) {
   const bits = [label];
   if (item.set) bits.push(item.set);
   if (day) bits.push(day);
-  const shot = /^\d+$/.test(String(item.id))
-    ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg`
-    : "";
+  const shot = family === "univers"
+    ? universSrc(item).replace("_in_400x400", "_in_1000x1000")
+    : (/^\d+$/.test(String(item.id)) ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg` : "");
   const art = shot
     ? `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}">`
     : `<span class="monogram">${esc(initials(item.name))}</span>`;
   const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
   const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
+  const montant = family === "univers" ? universMontant(item) : (typeof item.usd === "number" ? item.usd : null);
   const note = typeof item.usd === "number"
     ? tcgplayerNote(when)
-    : "Pas de cote unitaire pour cette ligne.";
+    : (family === "univers" ? venteNote(item) : "Pas de cote unitaire pour cette ligne.");
+  const cherche = state.photoBusy === String(item.id);
+  const deja = inCollection(String(item.id));
+  const plein = !deja && state.collection.items.length >= COLL_MAX;
+  const collLabel = deja ? "Retirer de ma collection" : plein ? "Collection pleine" : "Ajouter à ma collection";
+  const collBtn = `<button class="btn" type="button" data-action="coll-add" data-family="${family}" data-id="${esc(item.id)}" ${plein ? "disabled" : ""}>${collLabel}</button>`;
+  const photoBtn = family === "univers" ? `
+        <div class="fiche-actions">
+          <button class="btn" type="button" data-action="autre-photo" data-id="${esc(item.id)}" ${cherche ? "disabled" : ""}>${cherche ? "Recherche…" : (shot ? "Autre photo" : "Chercher une photo")}</button>
+          ${collBtn}
+        </div>
+        ${state.photoNote && productOpen?.id === String(item.id) ? `<p class="note">${esc(state.photoNote)}</p>` : ""}` : `<div class="fiche-actions">${collBtn}</div>`;
   return `
     <article class="fiche">
       ${ficheBar()}
@@ -3771,16 +4469,16 @@ function productHTML(item, family) {
       <div class="fiche-body">
         <p class="kicker">${esc(bits.join(" · "))}</p>
         <h2>${esc(item.name)}</h2>
-        ${typeof item.usd === "number" ? `<p class="cote-price">${esc(usdPlain(item.usd))}</p>` : ""}
+        ${typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : ""}
         <p class="note">${esc(note)}</p>
-        ${family === "sealed" ? `<div class="fiche-actions">
-          <button class="btn" type="button" data-action="coll-add" data-family="sealed" data-id="${esc(item.id)}" ${!inCollection(String(item.id)) && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${inCollection(String(item.id)) ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
-        </div>` : ""}
+        ${photoBtn}
       </div>
     </article>`;
 }
 
 function openProduct(item, family) {
+  const meme = productOpen?.id === String(item.id) && productOpen?.family === family;
+  if (!meme) state.photoNote = "";
   productOpen = { id: String(item.id), family };
   const dialog = document.getElementById("fiche");
   keepFiche();
@@ -3791,13 +4489,13 @@ function openProduct(item, family) {
   if (!dialog.open) dialog.showModal();
 }
 
-function coffretIntrouvable() {
+function produitIntrouvable(message) {
   productOpen = null;
   const dialog = document.getElementById("fiche");
   keepFiche();
   dialog.dataset.mode = "";
   dialog.dataset.current = "";
-  dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>Ce coffret n'est plus dans le catalogue.</p></div>`;
+  dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>${esc(message)}</p></div>`;
   dialog.removeAttribute("aria-busy");
   lockSheet();
   if (!dialog.open) dialog.showModal();
@@ -3923,7 +4621,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=53", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=62", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -3999,11 +4697,25 @@ function clarteToile(toile) {
   return total ? clairs / total : 0;
 }
 
+function horsCadre(element) {
+  const classe = element.classList;
+  if (!classe?.contains("tile") && !classe?.contains("set-tile") && !classe?.contains("coll-card") && !classe?.contains("pocket")) return false;
+  const box = element.getBoundingClientRect();
+  return box.bottom < -80 || box.top > window.innerHeight + 80 || box.right < -80 || box.left > window.innerWidth + 80;
+}
+
+function scanPriveVisible(racine) {
+  return [...racine.querySelectorAll("img[src*='tcgplayer']")].some((img) => {
+    const box = img.getBoundingClientRect();
+    return box.bottom > 0 && box.top < window.innerHeight && box.right > 0 && box.left < window.innerWidth;
+  });
+}
+
 async function priseEcran() {
   const html2canvas = await chargerCapture();
   const width = Math.max(1, Math.round(window.innerWidth));
   const height = Math.max(1, Math.round(window.innerHeight));
-  const feuille = document.body.classList.contains("sheet-open");
+  const feuille = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open) || null;
   const options = {
     x: feuille ? 0 : window.scrollX,
     y: feuille ? 0 : window.scrollY,
@@ -4017,24 +4729,36 @@ async function priseEcran() {
     useCORS: true,
     backgroundColor: "#0b0a08",
     logging: false,
-    imageTimeout: 4000,
-    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote",
+    imageTimeout: 1800,
+    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote" || (!feuille && horsCadre(element)),
     onclone: figerCouleurs,
   };
   let toile;
   try {
-    toile = await html2canvas(document.body, options);
+    toile = await html2canvas(feuille || document.body, options);
   } catch {
     toile = null;
   }
-  const scansPrives = document.querySelector("img[src*='tcgplayer']");
+  const scansPrives = scanPriveVisible(feuille || document);
   if (!toile || clarteToile(toile) < 0.08 || scansPrives) {
     const hote = document.createElement("div");
     hote.id = "capture-hote";
     hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:1;`;
-    const ouvert = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open);
-    const entete = ouvert ? "" : (document.querySelector("header")?.outerHTML || "");
-    hote.innerHTML = `${entete}${ouvert?.innerHTML || document.querySelector("main")?.innerHTML || ""}`;
+    const marques = [];
+    if (!feuille) {
+      document.querySelectorAll(".tile, .set-tile, .coll-card, .pocket").forEach((element) => {
+        if (!horsCadre(element)) return;
+        element.dataset.hors = "1";
+        marques.push(element);
+      });
+    }
+    const entete = feuille ? "" : (document.querySelector("header")?.outerHTML || "");
+    try {
+      hote.innerHTML = `${entete}${feuille?.innerHTML || document.querySelector("main")?.innerHTML || ""}`;
+      hote.querySelectorAll("[data-hors='1']").forEach((element) => element.remove());
+    } finally {
+      marques.forEach((element) => delete element.dataset.hors);
+    }
     document.body.appendChild(hote);
     try {
       hote.querySelectorAll("img").forEach((img) => {
@@ -4077,7 +4801,7 @@ async function priseEcran() {
           if (copie) copie.style.opacity = "1";
         },
       });
-      if (!toile || ouvert || clarteToile(autre) >= clarteToile(toile)) toile = autre;
+      if (!toile || feuille || clarteToile(autre) >= clarteToile(toile)) toile = autre;
     } catch {
       /* La première photo reste si le second essai échoue. */
     } finally {
@@ -4288,28 +5012,15 @@ function montrerSignal(report, note) {
 }
 
 let signalOuverture = false;
+let signalGeneration = 0;
 
 async function ouvrirSignal() {
   const dialog = document.getElementById("signal");
   if (!dialog || dialog.open || signalOuverture) return;
+  const generation = ++signalGeneration;
   signalOuverture = true;
   const report = brouillonSignal("");
-  let shot = "";
-  try {
-    shot = await Promise.race([
-      priseEcran(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 14000)),
-    ]);
-  } catch {
-    shot = "";
-  } finally {
-    signalOuverture = false;
-  }
-  if (dialog.open) return;
-  report.shot = shot || "";
-  montrerSignal(report, shot
-    ? "La photo est prise. Dis ce qui cloche, puis envoie."
-    : "La photo n'a pas pu être prise. Le texte suffit.");
+  montrerSignal(report, "La photo se prépare.");
   const texte = document.getElementById("signal-texte");
   if (texte) texte.value = "";
   paintSignaux();
@@ -4317,9 +5028,33 @@ async function ouvrirSignal() {
   lockSheet();
   texte?.focus();
   chargerSignaux();
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+  if (generation !== signalGeneration || !dialog.open) {
+    signalOuverture = false;
+    return;
+  }
+  let shot = "";
+  try {
+    shot = await Promise.race([
+      priseEcran(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 8000)),
+    ]);
+  } catch {
+    shot = "";
+  } finally {
+    signalOuverture = false;
+  }
+  if (generation !== signalGeneration || !dialog.open) return;
+  report.shot = shot || "";
+  montrerSignal(report, shot
+    ? "La photo est prise. Dis ce qui cloche, puis envoie."
+    : "La photo n'a pas pu être prise. Le texte suffit.");
 }
 
 function fermerSignal() {
+  signalGeneration += 1;
   const dialog = document.getElementById("signal");
   if (dialog?.open) dialog.close();
   unlockSheet();
@@ -4489,20 +5224,26 @@ function bind() {
   document.addEventListener("pointerdown", (event) => {
     const pocket = event.target.closest?.("[data-pocket]");
     if (!pocket || state.tab !== "classeur") return;
+    if (event.button != null && event.button !== 0) return;
     const index = Number(pocket.dataset.pocket);
-    const id = state.binder.pages[state.binder.page]?.[index];
-    if (!id || (event.button != null && event.button !== 0)) return;
-    event.preventDefault();
-    lift = { id, from: index, x: event.clientX, y: event.clientY, moved: false, pointerId: event.pointerId };
-    pocket.setPointerCapture?.(event.pointerId);
+    const id = state.binder.pages[state.binder.page]?.[index] || "";
+    lift = { id, from: index, x: event.clientX, y: event.clientY, moved: false, scrolling: false, pointerId: event.pointerId, pocket };
   });
 
   document.addEventListener("pointermove", (event) => {
-    if (!lift || event.pointerId !== lift.pointerId) return;
+    if (!lift || event.pointerId !== lift.pointerId || lift.scrolling) return;
     const dx = event.clientX - lift.x;
     const dy = event.clientY - lift.y;
-    if (!lift.moved && dx * dx + dy * dy < 64) return;
-    lift.moved = true;
+    if (!lift.moved) {
+      if (dx * dx + dy * dy < 64) return;
+      if (!lift.id || Math.abs(dy) >= Math.abs(dx)) {
+        lift.scrolling = true;
+        return;
+      }
+      lift.moved = true;
+      lift.pocket?.setPointerCapture?.(lift.pointerId);
+    }
+    event.preventDefault();
     showGhost(lift.id, event.clientX, event.clientY);
   });
 
@@ -4511,8 +5252,12 @@ function bind() {
     const current = lift;
     lift = null;
     hideGhost();
+    if (current.scrolling) {
+      suppressPocketClick = true;
+      return;
+    }
     if (!current.moved) {
-      openRelief(current.id, current.from);
+      if (current.id) openRelief(current.id, current.from);
       return;
     }
     suppressPocketClick = true;
@@ -4555,6 +5300,14 @@ function bind() {
       suppressPocketClick = false;
       return;
     }
+    if (binderEl?.dataset.binder === "remove") {
+      const slot = Number(binderEl.dataset.slot);
+      const page = binderEl.dataset.page === undefined || binderEl.dataset.page === ""
+        ? state.binder.page
+        : Number(binderEl.dataset.page);
+      leaveRelief(() => removeSlot(page, slot));
+      return;
+    }
     if (binderEl && state.tab === "classeur") {
       const kind = binderEl.dataset.binder;
       if (kind === "prev") turnBinder(-1);
@@ -4577,11 +5330,6 @@ function bind() {
         }
       }
       if (kind === "place") placeBinderCard(binderEl.dataset.id);
-      if (kind === "remove") {
-        const slot = Number(binderEl.dataset.slot);
-        const page = state.binder.page;
-        leaveRelief(() => removeSlot(page, slot));
-      }
       return;
     }
     if (pocketEl && state.tab === "classeur") {
@@ -4627,12 +5375,18 @@ function bind() {
         const list = family === "univers" ? state.univers : state.sealed;
         const item = (list || []).find((row) => String(row.id) === id);
         if (item) openProduct(item, family);
-        else if (family === "sealed") loadSealed().then(() => {
+        else if (family === "univers") loadUnivers().then(() => {
+          const found = (state.univers || []).find((row) => String(row.id) === id);
+          if (found) openProduct(found, "univers");
+          else produitIntrouvable("Cette pièce n'est plus dans le catalogue.");
+        });
+        else loadSealed().then(() => {
           const found = (state.sealed || []).find((row) => String(row.id) === id);
           if (found) openProduct(found, "sealed");
-          else coffretIntrouvable();
+          else produitIntrouvable("Ce coffret n'est plus dans le catalogue.");
         });
       }
+      if (action === "autre-photo") autrePhoto(actionEl.dataset.id);
       if (action === "sealed-retry") {
         state.sealed = null;
         state.sealedLoading = false;
@@ -4648,11 +5402,15 @@ function bind() {
       if (action === "fav") toggleFav(actionEl.dataset.id, actionEl.dataset.lang || state.market);
       if (action === "binder-add") {
         const lang = actionEl.dataset.lang || state.market;
-        const card = cache.get(cacheKey(actionEl.dataset.id, lang));
-        if (card) {
-          dialog.close();
-          rangerCard(card);
-        }
+        const id = actionEl.dataset.id;
+        const partir = (card) => {
+          if (!card?.id) return;
+          if (dialog.open) dialog.close();
+          leaveRelief(() => rangerCard(card));
+        };
+        const card = cache.get(cacheKey(id, lang)) || carteConnue(id, lang);
+        if (card?.name) partir(card);
+        else getCard(id, lang).then(partir).catch(() => {});
       }
       if (action === "open-fiche") {
         const id = actionEl.dataset.id;
@@ -4666,13 +5424,20 @@ function bind() {
           actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
           if (state.tab === "collection" && !state.visit) render();
         };
-        if (actionEl.dataset.family === "sealed") {
+        if (actionEl.dataset.family === "sealed" || actionEl.dataset.family === "univers") {
           const id = String(actionEl.dataset.id || "");
-          const item = (state.sealed || []).find((row) => String(row.id) === id);
-          if (inCollection(id)) removeFromCollection(id);
-          else if (item) addBox(item);
-          finish(id, "fr");
-          if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
+          const univers = actionEl.dataset.family === "univers";
+          const appliquer = (item) => {
+            if (inCollection(id)) removeFromCollection(id);
+            else if (univers) addUnivers(item);
+            else if (item) addBox(item);
+            finish(id, "fr");
+            if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
+          };
+          const list = univers ? state.univers : state.sealed;
+          const item = (list || []).find((row) => String(row.id) === id);
+          if (item || inCollection(id) || !univers) appliquer(item);
+          else loadUnivers().then(() => appliquer((state.univers || []).find((row) => String(row.id) === id)));
         } else {
           const id = actionEl.dataset.id;
           const lang = actionEl.dataset.lang || state.market;
@@ -4688,17 +5453,33 @@ function bind() {
       }
       if (action === "coll-share") copyCollectionLink();
       if (action === "coll-mine") leaveVisit();
-      if (action === "cote-mode") {
-        state.coteMode = actionEl.dataset.mode === "melange" ? "melange" : "tendance";
-        if (state.coteMode === "melange" && !state.hallOrder.length) {
-          state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
-        }
+      if (action === "cote-sort") {
+        state.coteSort = actionEl.dataset.sort === "asc" ? "asc" : "desc";
+        state.cotePage = 1;
         render();
       }
-      if (action === "cote-shuffle") {
-        state.coteMode = "melange";
-        state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
-        render();
+      if (action === "cote-famille") {
+        const famille = actionEl.dataset.famille;
+        if (COTES_FAMILLES.some(([id]) => id === famille)) {
+          state.coteFamille = famille;
+          state.cotePage = 1;
+          if (famille !== "cartes") {
+            loadSealed();
+            settleUsdFx("cotes");
+          }
+          const pret = famille === "cartes" ? state.hallCards.length > 0 || state.hallFailed : Array.isArray(state.sealed);
+          if (pret && state.coteGen !== "toutes" && !coteEntries(famille, state.coteGen).length) state.coteGen = "toutes";
+          render();
+        }
+      }
+      if (action === "cote-gen") {
+        const gen = actionEl.dataset.gen || "toutes";
+        const connu = gen === "toutes" || gen === "autres" || COTES_GENS.some(([id]) => id === gen);
+        if (connu) {
+          state.coteGen = gen;
+          state.cotePage = 1;
+          render();
+        }
       }
       if (action === "fav-sort") {
         state.favSort = actionEl.dataset.sort || "ajout";
@@ -4712,7 +5493,7 @@ function bind() {
       }
       if (action === "random" || action === "random-next") {
         const pick = nextRandomCard();
-        if (pick) openFiche(pick.id, { mode: "random", lang: langueCarte(pick) });
+        if (pick) openRelief(pick.id, null, langueCarte(pick), "random");
       }
       if (action === "jump") {
         document.getElementById("grille-titre")?.scrollIntoView({ behavior: motionOK ? "smooth" : "auto", block: "start" });
@@ -4743,7 +5524,7 @@ function bind() {
       return;
     }
 
-    if (openEl) openFiche(openEl.dataset.open, { lang: openEl.dataset.lang || state.market });
+    if (openEl) openRelief(openEl.dataset.open, null, openEl.dataset.lang || state.market);
   });
 
   document.addEventListener("change", (event) => {
@@ -4892,6 +5673,7 @@ async function recoverFromMarket(img) {
 
 function initialTab() {
   const hash = location.hash.replace("#", "");
+  if (hash === "favoris") return "classeur";
   return TABS.includes(hash) ? hash : "galerie";
 }
 
@@ -5063,6 +5845,7 @@ function ouvrirJournal() {
 }
 
 function boot() {
+  migrerFavoris();
   ouvrirJournal();
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) ouvrirJournal();
@@ -5076,6 +5859,16 @@ function boot() {
   });
   bind();
   bindSignal();
+  window.addEventListener("hashchange", () => {
+    const hash = location.hash.replace("#", "");
+    if (hash === "favoris") {
+      if (state.tab !== "classeur") setTab("classeur");
+      else rememberTab("classeur");
+      return;
+    }
+    if (TABS.includes(hash) && hash !== state.tab) setTab(hash);
+  });
+  chargerCapture().catch(() => {});
   registerServiceWorker();
   const fxReady = activeCurrency() !== "USD" || state.currency !== "EUR" ? loadFx() : Promise.resolve(null);
   const context = readContext();
@@ -5109,15 +5902,17 @@ function boot() {
     if (state.tab === "etb") loadSealed();
     if (state.tab === "univers") loadUnivers();
     updateFavCount();
-    if (state.tab === "favoris") refreshFavs();
     if (state.tab === "collection") {
       hydrateVisit();
       refreshCollection();
       if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
     }
-    if (state.tab === "cotes") loadHall();
+    if (state.tab === "cotes") {
+      loadHall();
+      loadSealed();
+    }
     fxReady.then(() => {
-      if (state.tab === "etb" || state.tab === "univers") repaintUsdTab();
+      if (state.tab === "etb" || state.tab === "univers" || state.tab === "cotes") repaintUsdTab();
       else if (activeCurrency() !== "EUR" && (state.tab === "galerie" || state.tab === "cotes")) render();
       paintOpenProduct();
       paintCollectionPrices();
