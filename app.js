@@ -1365,14 +1365,14 @@ function sealedTiles() {
     const price = usdHTML(item.usd);
     return `
       <article class="tile">
-        <div class="tile-hit">
+        <button class="tile-hit" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
           <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
             <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" loading="lazy" decoding="async">
           </span>
           <span class="tile-name">${esc(item.name)}</span>
           <span class="tile-meta">${esc(bits.join(" · "))}</span>
           <span class="price-line">${price}</span>
-        </div>
+        </button>
       </article>`;
   }).join("");
 }
@@ -1536,12 +1536,12 @@ function universTiles() {
       : `<span class="monogram" data-label="${esc(initials(item.name))}">${esc(initials(item.name))}</span>`;
     return `
       <article class="tile">
-        <div class="tile-hit">
+        <button class="tile-hit" type="button" data-action="product" data-family="univers" data-id="${esc(item.id)}">
           <span class="art is-box" data-label="${esc(universLabel(item.kind))}">${art}</span>
           <span class="tile-name">${esc(item.name)}</span>
           <span class="tile-meta">${esc(bits.join(" · "))}</span>
           <span class="price-line">${price}</span>
-        </div>
+        </button>
       </article>`;
   }).join("");
 }
@@ -2816,6 +2816,48 @@ function fichePending() {
   return `<div class="pending">${ficheBar()}Ouverture de la fiche…</div>`;
 }
 
+function productHTML(item, family) {
+  const label = family === "univers" ? universLabel(item.kind) : sealedLabel(item.kind);
+  const day = family === "univers"
+    ? releasedLabel(item.released)
+    : formatDay(item.released ? `${item.released}T12:00:00` : "");
+  const bits = [label];
+  if (item.set) bits.push(item.set);
+  if (day) bits.push(day);
+  const shot = /^\d+$/.test(String(item.id))
+    ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg`
+    : "";
+  const art = shot
+    ? `<img src="${esc(shot)}" alt="${esc(item.name)}">`
+    : `<span class="monogram">${esc(initials(item.name))}</span>`;
+  const when = family === "sealed" ? formatDay(state.sealedAsOf ? `${state.sealedAsOf}T12:00:00` : "") : "";
+  const dated = when ? ` Relevée le ${when}.` : "";
+  const note = typeof item.usd === "number"
+    ? `Cote TCGPlayer en dollars.${dated} Pas une offre.`
+    : "Pas de cote unitaire pour cette ligne.";
+  return `
+    <article class="fiche">
+      ${ficheBar()}
+      <div class="fiche-art">
+        <div class="stage is-box" data-label="${esc(label)}">${art}</div>
+      </div>
+      <div class="fiche-body">
+        <p class="kicker">${esc(bits.join(" · "))}</p>
+        <h2>${esc(item.name)}</h2>
+        ${typeof item.usd === "number" ? `<p class="cote-price">${esc(usdFmt.format(item.usd))}</p>` : ""}
+        <p class="note">${esc(note)}</p>
+      </div>
+    </article>`;
+}
+
+function openProduct(item, family) {
+  const dialog = document.getElementById("fiche");
+  dialog.dataset.mode = "";
+  dialog.dataset.current = "";
+  dialog.innerHTML = productHTML(item, family);
+  if (!dialog.open) dialog.showModal();
+}
+
 async function openFiche(id, modeOrOpts) {
   const opts = typeof modeOrOpts === "string" ? { mode: modeOrOpts } : (modeOrOpts || {});
   const lang = opts.lang || state.market;
@@ -3074,6 +3116,12 @@ function bind() {
         else loadSet(state.gallerySeriesId, state.setId);
       }
       if (action === "quote") quoteSet();
+      if (action === "product") {
+        const family = actionEl.dataset.family === "univers" ? "univers" : "sealed";
+        const list = family === "univers" ? state.univers : state.sealed;
+        const item = (list || []).find((row) => String(row.id) === actionEl.dataset.id);
+        if (item) openProduct(item, family);
+      }
       if (action === "sealed-retry") {
         state.sealed = null;
         state.sealedLoading = false;

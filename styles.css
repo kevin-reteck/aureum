@@ -332,6 +332,7 @@ h3 { margin: 0; font-size: 1.05rem; font-weight: 560; }
   z-index: 3;
 }
 
+.stage.is-box { aspect-ratio: 1; }
 .stage {
   position: relative;
   aspect-ratio: 63 / 88;
