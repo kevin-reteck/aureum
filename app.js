@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=48";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=49";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3642,7 +3642,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=48", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=49", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4505,12 +4505,13 @@ function applyMarket(lang) {
 
 const JOURNAL_KEY = "aureum.journal";
 
-// La liste « Nouveautés » dans index.html est le journal. En changer le texte le rouvre une fois, même si la personne est déjà connectée.
-function texteJournal() {
-  return [...document.querySelectorAll("#journal .journal-list li")]
-    .map((item) => item.textContent.replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .join("\n");
+// Ajouter les phrases à la fin de la liste, sans réécrire les anciennes.
+// Qui a déjà lu ne revoit que la suite. Qui n'a pas lu voit les anciennes plus les nouvelles.
+function entreesJournal() {
+  return [...document.querySelectorAll("#journal .journal-list li")].flatMap((item) => {
+    const texte = item.textContent.replace(/\s+/g, " ").trim();
+    return texte ? [{ item, texte }] : [];
+  });
 }
 
 function empreinteJournal(texte) {
@@ -4522,22 +4523,39 @@ function empreinteJournal(texte) {
   return (hash >>> 0).toString(16);
 }
 
-function journalDejaLu() {
-  const texte = texteJournal();
+function marqueJournal() {
   const email = emailSession();
-  if (!texte || !email) return true;
+  if (!email) return "";
   try {
     const brut = JSON.parse(localStorage.getItem(JOURNAL_KEY) || "{}");
-    return brut?.[email] === empreinteJournal(texte);
+    return String(brut?.[email] || "");
   } catch {
-    return false;
+    return "";
   }
 }
 
+function indiceDejaLu(lignes, marque) {
+  if (!marque) return 0;
+  for (let i = lignes.length; i >= 0; i -= 1) {
+    if (empreinteJournal(lignes.slice(0, i).join("\n")) === marque) return i;
+  }
+  return 0;
+}
+
+function preparerJournal() {
+  const entrees = entreesJournal();
+  if (!entrees.length || !emailSession()) return false;
+  const deja = indiceDejaLu(entrees.map((entree) => entree.texte), marqueJournal());
+  entrees.forEach((entree, index) => {
+    entree.item.hidden = index < deja;
+  });
+  return deja < entrees.length;
+}
+
 function marquerJournal() {
-  const texte = texteJournal();
+  const lignes = entreesJournal().map((entree) => entree.texte);
   const email = emailSession();
-  if (!texte || !email) return;
+  if (!lignes.length || !email) return;
   let brut = {};
   try {
     const lu = JSON.parse(localStorage.getItem(JOURNAL_KEY) || "{}");
@@ -4545,7 +4563,7 @@ function marquerJournal() {
   } catch {
     brut = {};
   }
-  brut[email] = empreinteJournal(texte);
+  brut[email] = empreinteJournal(lignes.join("\n"));
   try {
     localStorage.setItem(JOURNAL_KEY, JSON.stringify(brut));
   } catch {
@@ -4560,7 +4578,7 @@ function fermerJournal() {
 }
 
 function ouvrirJournal() {
-  if (journalDejaLu()) return;
+  if (!preparerJournal()) return;
   const dialog = document.getElementById("journal");
   const bouton = document.getElementById("journal-lu");
   if (!dialog || dialog.open) return;
