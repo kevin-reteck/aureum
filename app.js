@@ -2,7 +2,10 @@ const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
 const CTX_KEY = "aureum.contexte";
 const FREE_FAVS = 3;
-const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "classeur"];
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
+const COLL_KEY = "aureum.collection";
+const COLL_MAX = 30;
+const NOTE_MAX = 140;
 const BINDER_KEY = "aureum.classeur";
 const POCKETS = 9;
 const PAGE_SIZE = 18;
@@ -37,6 +40,7 @@ const setsCache = new Map();
 
 let epoch = 0;
 let favEpoch = 0;
+let visitEpoch = 0;
 let quoteToken = 0;
 let searchTimer = 0;
 const motionOK = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -61,6 +65,9 @@ const state = {
   iconicsReady: false,
   favorites: loadFavs(),
   favSort: "ajout",
+  collection: loadCollection(),
+  visit: null,
+  shareNote: "",
   binder: loadBinder(),
   binderSlot: null,
   binderQuery: "",
@@ -1605,6 +1612,298 @@ async function searchBinder(raw) {
   paintBinder();
 }
 
+function blankCollection() {
+  return { name: "", named: true, shareFavs: false, items: [] };
+}
+
+function looseName(value) {
+  return String(value || "").replace(/[^\p{L}\p{N} '\-.]/gu, "").slice(0, 24);
+}
+
+function looseNote(value) {
+  return String(value || "").replace(/[\u0000-\u001F]/g, "").slice(0, NOTE_MAX);
+}
+
+function loadCollection() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLL_KEY) || "{}");
+    const items = Array.isArray(raw.items) ? raw.items : [];
+    return {
+      name: looseName(raw.name).trim(),
+      named: raw.named !== false,
+      shareFavs: raw.shareFavs === true,
+      items: items.filter((item) => item && cleanId(item.id, "") && item.name).slice(0, COLL_MAX).map((item) => ({
+        id: item.id,
+        name: looseNote(item.name).trim() || "Carte",
+        image: typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : "",
+        setName: looseNote(item.setName).trim(),
+        localId: looseNote(item.localId).trim().slice(0, 16),
+        note: looseNote(item.note).trim(),
+      })),
+    };
+  } catch {
+    return blankCollection();
+  }
+}
+
+function saveCollection() {
+  localStorage.setItem(COLL_KEY, JSON.stringify(state.collection));
+}
+
+function inCollection(id) {
+  return state.collection.items.some((item) => item.id === id);
+}
+
+function collectionFromCard(card, note = "") {
+  return {
+    id: card.id,
+    name: card.name,
+    image: typeof card.image === "string" ? card.image : "",
+    setName: card.set?.name || card.setName || "",
+    localId: card.localId || "",
+    note: looseNote(note).trim(),
+  };
+}
+
+function addToCollection(card) {
+  if (!card?.id || inCollection(card.id) || state.collection.items.length >= COLL_MAX) return;
+  state.collection.items.unshift(collectionFromCard(card));
+  saveCollection();
+}
+
+function removeFromCollection(id) {
+  state.collection.items = state.collection.items.filter((item) => item.id !== id);
+  saveCollection();
+}
+
+function bytesToB64url(bytes) {
+  let bin = "";
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < view.length; i += 1) bin += String.fromCharCode(view[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function b64urlToBytes(text) {
+  const pad = text.length % 4 === 0 ? "" : "=".repeat(4 - (text.length % 4));
+  const bin = atob(text.replace(/-/g, "+").replace(/_/g, "/") + pad);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function shareRow(item, withNote) {
+  const row = {
+    i: item.id,
+    a: looseNote(item.name).trim(),
+    s: looseNote(item.setName).trim(),
+    l: looseNote(item.localId).trim().slice(0, 16),
+  };
+  if (withNote) row.c = looseNote(item.note).trim();
+  return row;
+}
+
+function sharePayload() {
+  const mine = state.collection;
+  const items = mine.items.map((item) => shareRow(item, true));
+  const favs = mine.shareFavs ? state.favorites.map((item) => shareRow(item, false)) : [];
+  if (!items.length && !favs.length) return null;
+  return { v: 1, n: mine.named ? looseName(mine.name).trim() : "", items, favs };
+}
+
+async function encodeShare(payload) {
+  const json = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(json);
+  if (typeof CompressionStream === "function") {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+    const buf = await new Response(stream).arrayBuffer();
+    return `z${bytesToB64url(buf)}`;
+  }
+  return `j${bytesToB64url(bytes)}`;
+}
+
+function sanitizeRows(rows, withNote) {
+  if (!Array.isArray(rows)) return [];
+  return rows.slice(0, COLL_MAX).flatMap((row) => {
+    const id = cleanId(row?.i, "");
+    const name = looseNote(row?.a).trim();
+    if (!id || !name) return [];
+    return [{
+      id,
+      name,
+      image: "",
+      setName: looseNote(row?.s).trim(),
+      localId: looseNote(row?.l).trim().slice(0, 16),
+      note: withNote ? looseNote(row?.c).trim() : "",
+    }];
+  });
+}
+
+async function decodeShare(token) {
+  if (typeof token !== "string" || token.length < 4 || token.length > 4000) return null;
+  const kind = token[0];
+  const bytes = b64urlToBytes(token.slice(1));
+  let json = "";
+  if (kind === "z" && typeof DecompressionStream === "function") {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    json = await new Response(stream).text();
+  } else if (kind === "j") json = new TextDecoder().decode(bytes);
+  else return null;
+  const data = JSON.parse(json);
+  if (!data || data.v !== 1) return null;
+  const items = sanitizeRows(data.items, true);
+  const favs = sanitizeRows(data.favs, false);
+  if (!items.length && !favs.length) return null;
+  return { name: looseName(data.n).trim(), items, favs };
+}
+
+function collCard(card, editable) {
+  const meta = metaLine({ ...card, set: { name: card.setName } });
+  const note = editable
+    ? `<label class="coll-label">Commentaire
+        <textarea data-coll-note="${esc(card.id)}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
+      </label>
+      <button class="btn unfav" type="button" data-action="coll-remove" data-id="${esc(card.id)}">Retirer</button>`
+    : (card.note ? `<p class="coll-note">${esc(card.note)}</p>` : "");
+  return `
+    <article class="coll-card" data-card="${esc(card.id)}">
+      <button class="coll-open" type="button" data-open="${esc(card.id)}" aria-label="${esc(prettyName(card.name))}">
+        <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
+      </button>
+      <div>
+        <button class="coll-title" type="button" data-open="${esc(card.id)}">${esc(prettyName(card.name))}</button>
+        <p class="tile-meta">${esc(meta)}</p>
+        ${note}
+      </div>
+    </article>`;
+}
+
+function visitHTML() {
+  const visit = state.visit;
+  if (visit.error) {
+    return `
+      <div class="empty-state">
+        <h2>Ce lien ne s'ouvre pas.</h2>
+        <p class="lede">Le partage est incomplet ou trop ancien.</p>
+        <button class="btn solid" type="button" data-action="coll-mine">Ma collection</button>
+      </div>`;
+  }
+  const title = visit.name ? `Collection de ${visit.name}` : "Une collection";
+  const favs = visit.favs?.length
+    ? `<h3 class="coll-sub">Favoris</h3><div class="coll-list">${visit.favs.map((card) => collCard(card, false)).join("")}</div>`
+    : "";
+  const items = visit.items?.length
+    ? `<div class="coll-list">${visit.items.map((card) => collCard(card, false)).join("")}</div>`
+    : "";
+  return `
+    <section class="panel">
+      <header class="section-head">
+        <div>
+          <p class="kicker">Collection</p>
+          <h2>${esc(title)}</h2>
+        </div>
+        <p class="lede">Lecture seule. Cette page n'enregistre rien ici, et elle ne propose rien à la vente.</p>
+      </header>
+      <button class="btn" type="button" data-action="coll-mine">Ma collection</button>
+      ${items}
+      ${favs}
+    </section>`;
+}
+
+function collectionHTML() {
+  if (state.visit) return visitHTML();
+  const mine = state.collection;
+  const empty = mine.items.length
+    ? ""
+    : `<p class="note">Aucune carte pour l'instant. Ouvre une fiche, puis ajoute-la à ta collection.</p>`;
+  return `
+    <section class="panel">
+      <header class="section-head">
+        <div>
+          <p class="kicker">Collection</p>
+          <h2>Ma collection</h2>
+        </div>
+        <p class="lede">Un commentaire sous chaque carte, sur cet appareil. Le lien la montre à qui tu veux, avec ton nom ou sans. Rien ne se vend ici.</p>
+      </header>
+      <form class="coll-form" id="coll-form">
+        <label class="coll-label" for="coll-name">Ton nom
+          <input id="coll-name" type="text" maxlength="24" value="${esc(mine.name)}" placeholder="Un prénom suffit" autocomplete="nickname">
+        </label>
+        <label class="coll-check"><input id="coll-named" type="checkbox" ${mine.named ? "checked" : ""}> Montrer ce nom dans le lien</label>
+        <label class="coll-check"><input id="coll-favs" type="checkbox" ${mine.shareFavs ? "checked" : ""}> Joindre mes favoris au lien</label>
+        <button class="btn solid" type="button" data-action="coll-share">Copier le lien</button>
+        <p class="note" id="coll-status">${esc(state.shareNote)}</p>
+      </form>
+      <p class="note">${mine.items.length} sur ${COLL_MAX}. Le commentaire parle de l'état, d'un souvenir ou de l'emplacement.</p>
+      ${empty}
+      <div class="coll-list">${mine.items.map((card) => collCard(card, true)).join("")}</div>
+    </section>`;
+}
+
+async function hydrateVisit() {
+  if (!state.visit || state.visit.error || state.tab !== "collection") return;
+  const token = ++visitEpoch;
+  const rows = [...(state.visit.items || []), ...(state.visit.favs || [])];
+  await pool(rows, 4, async (row) => {
+    try {
+      const full = await getCard(row.id);
+      if (token !== visitEpoch || state.tab !== "collection" || !state.visit) return;
+      const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(full.id) : full.id.replace(/"/g, "");
+      const keep = (list) => {
+        const row = list?.find((item) => item.id === full.id);
+        if (row && typeof full.image === "string") row.image = full.image;
+      };
+      keep(state.visit.items);
+      keep(state.visit.favs);
+      document.querySelectorAll(`[data-card="${safe}"]`).forEach((node) => {
+        const art = node.querySelector(".art");
+        if (art && !art.querySelector("img")) art.innerHTML = imgTag(full, "low", false);
+      });
+      patchCard(full);
+    } catch {
+      /* Le monogramme reste si le scan manque. */
+    }
+  });
+}
+
+async function copyCollectionLink() {
+  const status = document.getElementById("coll-status");
+  const payload = sharePayload();
+  if (!payload) {
+    state.shareNote = "Ajoute une carte, ou coche les favoris, avant de copier le lien.";
+    if (status) status.textContent = state.shareNote;
+    return;
+  }
+  const token = await encodeShare(payload);
+  if (token.length > 1800) {
+    state.shareNote = "Le lien est trop long. Raccourcis un commentaire ou retire une carte.";
+    if (status) status.textContent = state.shareNote;
+    return;
+  }
+  const url = new URL(location.href);
+  url.search = "";
+  url.searchParams.set("voir", token);
+  url.hash = "collection";
+  const link = url.toString();
+  try {
+    await navigator.clipboard.writeText(link);
+    state.shareNote = "Lien copié.";
+  } catch {
+    state.shareNote = link;
+  }
+  if (status) status.textContent = state.shareNote;
+}
+
+function leaveVisit() {
+  state.visit = null;
+  state.shareNote = "";
+  const url = new URL(location.href);
+  url.searchParams.delete("voir");
+  history.replaceState(null, "", `${url.pathname}${url.search}#collection`);
+  state.tab = "collection";
+  updateTabs();
+  render();
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
@@ -1614,17 +1913,27 @@ function render() {
   else if (state.tab === "univers") app.innerHTML = universHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
   else if (state.tab === "classeur") app.innerHTML = binderHTML();
+  else if (state.tab === "collection") app.innerHTML = collectionHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
 }
 
 function setTab(tab) {
+  if (tab !== "collection") {
+    const url = new URL(location.href);
+    if (url.searchParams.has("voir")) {
+      url.searchParams.delete("voir");
+      url.hash = tab;
+      history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }
   rememberTab(tab);
   render();
   window.scrollTo(0, 0);
   if (tab === "extensions") selectSeries(state.browseSeriesId);
   if (tab === "favoris") refreshFavs();
+  if (tab === "collection") hydrateVisit();
   if (tab === "etb") loadSealed();
   if (tab === "univers") loadUnivers();
 }
@@ -1677,13 +1986,15 @@ async function loadSet(seriesId, setId, { focus = true } = {}) {
     state.setCards = Array.isArray(detail.cards) ? detail.cards : [];
     state.loading = false;
     rememberContext();
-    render();
-    hydrateShown(token);
+    if (state.tab === "galerie") {
+      render();
+      hydrateShown(token);
+    }
   } catch {
     if (token !== epoch) return;
     state.loading = false;
     state.error = "Impossible de charger cette extension.";
-    render();
+    if (state.tab === "galerie") render();
   }
 }
 
@@ -1980,6 +2291,7 @@ function ficheHTML(card) {
   const types = Array.isArray(card.types) ? card.types : [];
   const when = formatDay(card.pricing?.cardmarket?.updated);
   const favOn = isFav(card.id);
+  const collOn = inCollection(card.id);
   return `
     <article class="fiche">
       <button class="close" type="button" data-action="close">Fermer</button>
@@ -2012,6 +2324,7 @@ function ficheHTML(card) {
         <div class="fiche-actions">
           <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
           <button class="btn" type="button" data-action="binder-add" data-id="${esc(card.id)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
+          <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" ${!collOn && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${collOn ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
         </div>
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
       </div>
@@ -2093,6 +2406,18 @@ function bind() {
       state.universPage = 1;
       paintUnivers();
     }
+    if (event.target.id === "coll-name") {
+      state.collection.name = looseName(event.target.value);
+      saveCollection();
+    }
+    const noteId = event.target.dataset?.collNote;
+    if (noteId) {
+      const item = state.collection.items.find((row) => row.id === noteId);
+      if (item) {
+        item.note = looseNote(event.target.value);
+        saveCollection();
+      }
+    }
   });
 
   document.addEventListener("change", (event) => {
@@ -2106,6 +2431,14 @@ function bind() {
       state.universPage = 1;
       paintUnivers();
     }
+    if (event.target.id === "coll-named") {
+      state.collection.named = event.target.checked;
+      saveCollection();
+    }
+    if (event.target.id === "coll-favs") {
+      state.collection.shareFavs = event.target.checked;
+      saveCollection();
+    }
   });
 
   clear.addEventListener("click", () => {
@@ -2118,6 +2451,7 @@ function bind() {
   });
 
   document.addEventListener("submit", (event) => {
+    if (event.target.id === "coll-form") event.preventDefault();
     if (event.target.id !== "binder-form") return;
     event.preventDefault();
     clearTimeout(binderTimer);
@@ -2292,6 +2626,22 @@ function bind() {
         document.getElementById("relief")?.close();
         openFiche(actionEl.dataset.id);
       }
+      if (action === "coll-add") {
+        const id = actionEl.dataset.id;
+        const card = cache.get(id);
+        if (inCollection(id)) removeFromCollection(id);
+        else if (card) addToCollection(card);
+        const on = inCollection(id);
+        actionEl.textContent = on ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection";
+        actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
+        if (state.tab === "collection" && !state.visit) render();
+      }
+      if (action === "coll-remove") {
+        removeFromCollection(actionEl.dataset.id);
+        if (state.tab === "collection") render();
+      }
+      if (action === "coll-share") copyCollectionLink();
+      if (action === "coll-mine") leaveVisit();
       if (action === "fav-sort") {
         state.favSort = actionEl.dataset.sort || "ajout";
         render();
@@ -2443,20 +2793,31 @@ function boot() {
   state.gallerySeriesId = context.seriesId;
   state.setId = context.setId;
   state.browseSeriesId = context.seriesId;
-  rememberTab(initialTab());
-  render();
-  if (state.tab === "etb") loadSealed();
-  if (state.tab === "univers") loadUnivers();
-  updateFavCount();
-  fetchJSON("/series")
-    .then((list) => {
-      state.series = Array.isArray(list) ? list : [];
-      if (state.tab === "extensions") render();
+  const token = new URLSearchParams(location.search).get("voir");
+  const openVisit = token
+    ? decodeShare(token).then((visit) => {
+      state.visit = visit || { error: true };
+    }).catch(() => {
+      state.visit = { error: true };
     })
-    .catch(() => {});
-  loadIconics();
-  loadSet(state.gallerySeriesId, state.setId, { focus: state.tab === "galerie" });
-  if (state.tab === "favoris") refreshFavs();
+    : Promise.resolve();
+  openVisit.then(() => {
+    rememberTab(state.visit ? "collection" : initialTab());
+    render();
+    if (state.tab === "etb") loadSealed();
+    if (state.tab === "univers") loadUnivers();
+    updateFavCount();
+    if (state.tab === "favoris") refreshFavs();
+    if (state.tab === "collection") hydrateVisit();
+    fetchJSON("/series")
+      .then((list) => {
+        state.series = Array.isArray(list) ? list : [];
+        if (state.tab === "extensions") render();
+      })
+      .catch(() => {});
+    loadIconics();
+    loadSet(state.gallerySeriesId, state.setId, { focus: state.tab === "galerie" });
+  });
 }
 
 boot();
