@@ -479,6 +479,41 @@ select {
   letter-spacing: -0.03em;
 }
 .price-missing { color: var(--muted); font-size: 0.86rem; }
+.price-lock {
+  font-family: var(--serif);
+  font-weight: 560;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold-2);
+  font-size: 0.82rem;
+}
+.tabs [data-tab="or"] { color: var(--gold-2); }
+a.btn { display: inline-block; text-decoration: none; }
+.or-page { max-width: 680px; }
+.or-price {
+  margin: 6px 0 8px;
+  font-family: var(--serif);
+  font-weight: 560;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  line-height: 1;
+  color: var(--gold-2);
+}
+.or-price small {
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.or-list {
+  margin: 18px 0;
+  padding: 0;
+  list-style: none;
+}
+.or-list li {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.or-list li:last-child { border-bottom: 1px solid var(--line); }
 .delta { font-size: 0.82rem; font-weight: 600; }
 .delta.up { color: var(--up); }
 .delta.down { color: var(--down); }
