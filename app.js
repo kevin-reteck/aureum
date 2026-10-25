@@ -489,7 +489,8 @@ function marketArt(card, quality) {
   const variants = Array.isArray(card?.variants_detailed) ? card.variants_detailed : [];
   const product = variants
     .map((variant) => productId(variant?.thirdParty?.tcgplayer))
-    .find(Boolean);
+    .find(Boolean)
+    || productId(card?.thirdParty?.tcgplayer);
   if (!product) return "";
   const px = quality === "high" ? 1000 : 400;
   return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_in_${px}x${px}.jpg`;
@@ -582,7 +583,7 @@ function imgTag(card, size, eager) {
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
   const priority = eager ? `fetchpriority="high"` : "";
-  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${priority} decoding="async">`;
+  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${priority} loading="eager" decoding="async">`;
 }
 
 function logoTag(seriesId, setId) {
@@ -699,6 +700,7 @@ function isFav(id, lang = state.market) {
 }
 
 function snapshot(card) {
+  const flags = variantFlags(card);
   return {
     id: card.id,
     name: card.name,
@@ -706,6 +708,7 @@ function snapshot(card) {
     setName: card.set?.name || "",
     localId: card.localId || "",
     rarity: card.rarity || "",
+    variants: flags,
     setTotal: setSize(card) || null,
     trend: typeof card.pricing?.cardmarket?.trend === "number" ? card.pricing.cardmarket.trend : null,
     pricing: card.pricing || null,
@@ -1771,6 +1774,104 @@ function firstHole(start = state.binder.page) {
   return null;
 }
 
+function foldText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase();
+}
+
+function variantFlags(card) {
+  const raw = card?.variants;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (!("holo" in raw) && !("normal" in raw) && !("reverse" in raw)) return null;
+  return {
+    normal: raw.normal === true,
+    reverse: raw.reverse === true,
+    holo: raw.holo === true,
+  };
+}
+
+const FULL_FACE_RARITY = [
+  "illustration",
+  "hyper",
+  "magnifique",
+  "shiny",
+  "secret",
+  "arc-en-ciel",
+  "rainbow",
+  "full art",
+  "alternative",
+  "galerie",
+  "chromatique",
+  "gold",
+];
+
+function foilKind(card) {
+  const rarity = foldText(card?.rarity);
+  const flags = variantFlags(card);
+  const types = new Set(
+    (Array.isArray(card?.variants_detailed) ? card.variants_detailed : [])
+      .map((variant) => foldText(variant?.type))
+      .filter(Boolean),
+  );
+  const holo = Boolean(flags?.holo) || types.has("holo");
+  const reverse = Boolean(flags?.reverse) || types.has("reverse");
+  const normal = Boolean(flags?.normal) || types.has("normal");
+  if (FULL_FACE_RARITY.some((token) => rarity.includes(token))) return "plein";
+  if (holo && !normal && rarity.includes("ultra")) return "plein";
+  if (holo && !normal) return "fenetre";
+  if (reverse && !normal && !holo) return "cadre";
+  if (/holo|vmax|vstar|double rare|ultra/.test(rarity)) return "fenetre";
+  return "papier";
+}
+
+function artSize(card) {
+  const rarity = foldText(card?.rarity);
+  if (/double rare|holo rare v|vmax|vstar/.test(rarity)) return "large";
+  return "classic";
+}
+
+function foilHint(kind) {
+  if (kind === "cadre") return "Penche la carte : le reflet du cadre suit le mouvement.";
+  if (kind === "papier") return "Penche la carte : une lumière douce suit le mouvement.";
+  return "Penche la carte : le reflet holographique suit le mouvement.";
+}
+
+function holoSpan(card, quiet) {
+  const kind = foilKind(card);
+  if (kind === "papier") return "";
+  const quietClass = quiet ? " is-quiet" : "";
+  return `<span class="holo${quietClass}" data-foil="${kind}" data-art="${artSize(card)}" aria-hidden="true"></span>`;
+}
+
+let foilHydrateToken = 0;
+
+async function hydrateBinderFoils() {
+  const pending = Object.values(state.binder.cards).filter((card) => card?.id && !variantFlags(card));
+  if (!pending.length) return;
+  const token = ++foilHydrateToken;
+  await pool(pending, 3, async (card) => {
+    if (token !== foilHydrateToken) return;
+    try {
+      const full = await getCard(card.id, card.lang || "fr");
+      const flags = variantFlags(full);
+      const current = state.binder.cards[card.id];
+      if (!current || !flags || token !== foilHydrateToken) return;
+      state.binder.cards[card.id] = {
+        ...current,
+        rarity: full.rarity || current.rarity || "",
+        variants: flags,
+      };
+    } catch {
+      /* La prochaine ouverture du classeur réessaiera. */
+    }
+  });
+  if (token !== foilHydrateToken) return;
+  saveBinder();
+  if (state.tab === "classeur") paintBinder();
+}
+
 function pocketHTML(id, index) {
   const chosen = state.binderSlot === index ? " is-chosen" : "";
   const card = id ? state.binder.cards[id] : null;
@@ -1778,18 +1879,21 @@ function pocketHTML(id, index) {
     return `<button type="button" class="pocket${chosen}" data-pocket="${index}"><span class="pocket-empty">Libre</span></button>`;
   }
   return `<button type="button" class="pocket is-full${chosen}" data-pocket="${index}" aria-label="${esc(prettyName(card.name))}">
-    <span class="pocket-card">${imgTag(card, "low", false)}<span class="holo is-quiet" aria-hidden="true"></span></span>
+    <span class="pocket-card">${imgTag(card, "low", false)}${holoSpan(card, true)}</span>
   </button>`;
 }
 
 function binderHitsHTML() {
   if (state.binderQuery.trim().length < 2) return "";
   if (!state.binderHits.length) return `<p class="note">Aucune carte ne porte ce nom.</p>`;
-  return state.binderHits.map((card) => `
+  return state.binderHits.map((card) => {
+    const name = prettyName(card.name);
+    return `
     <button type="button" class="binder-hit" data-binder="place" data-id="${esc(card.id)}">
-      <span class="binder-hit-art">${imgTag(card, "low", false)}</span>
-      <span>${esc(prettyName(card.name))}</span>
-    </button>`).join("");
+      <span class="binder-hit-art" data-label="${esc(initials(card.name))}">${imgTag(resolveCard(card), "low", true)}</span>
+      <span class="binder-hit-name">${esc(name)}</span>
+    </button>`;
+  }).join("");
 }
 
 function paintBinder() {
@@ -1805,10 +1909,13 @@ function paintBinder() {
   grid.innerHTML = page.map((id, index) => pocketHTML(id, index)).join("");
   status.textContent = binderLabel();
   hits.innerHTML = binderHitsHTML();
+  hits.scrollLeft = 0;
+  wakeScans(hits);
   if (drop) {
     const empty = page.every((id) => !id);
     drop.hidden = !(empty && state.binder.pages.length > 1);
   }
+  hydrateBinderScans();
 }
 
 function binderHTML() {
@@ -1832,14 +1939,14 @@ function binderHTML() {
         <button class="btn" type="button" data-binder="prev">Précédente</button>
         <button class="btn" type="button" data-binder="next">Suivante</button>
       </div>
-      <p class="hint">Glisse une carte pour la déplacer, même vers la page d'à côté. Un clic l'ouvre en relief : le reflet holographique suit le doigt.</p>
+      <p class="hint">Glisse une carte pour la déplacer, même vers la page d'à côté. Un clic l'ouvre en relief : la lumière suit le doigt.</p>
       <div class="binder-nav">
         <button class="btn" type="button" data-binder="add-page">Ajouter une page</button>
         <button class="btn" type="button" id="binder-drop" data-binder="drop-page"${empty && state.binder.pages.length > 1 ? "" : " hidden"}>Retirer cette page</button>
       </div>
       <form class="binder-search" id="binder-form">
         <label class="field">Ranger une carte
-          <input id="binder-q" type="search" placeholder="Nom d'une carte" autocomplete="off" enterkeyhint="search" value="${esc(state.binderQuery)}">
+          <input id="binder-q" type="search" placeholder="Nom d'une carte" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(state.binderQuery)}">
         </label>
       </form>
       <div class="binder-hits" id="binder-hits">${binderHitsHTML()}</div>
@@ -1847,18 +1954,19 @@ function binderHTML() {
 }
 
 function reliefHTML(card, slot) {
+  const kind = foilKind(card);
   return `
     <div class="relief">
       <button class="close" type="button" data-action="close">Fermer</button>
       <div class="relief-stage">
-        <div class="stage is-holo" data-tilt data-label="${esc(initials(card.name))}">
+        <div class="stage" data-tilt data-foil="${kind}" data-art="${artSize(card)}" data-label="${esc(initials(card.name))}">
           ${imgTag(card, "high", true)}
-          <span class="holo" aria-hidden="true"></span>
+          ${holoSpan(card, false)}
           <span class="shine" aria-hidden="true"></span>
         </div>
       </div>
       <p class="relief-name">${esc(prettyName(card.name))}</p>
-      <p class="hint">Penche la carte : le reflet holographique suit le mouvement.</p>
+      <p class="hint">${foilHint(kind)}</p>
       <div class="fiche-actions">
         <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}">Voir la fiche</button>
         <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
@@ -1867,15 +1975,17 @@ function reliefHTML(card, slot) {
 }
 
 let sheetScrollY = 0;
+let sheetHold = 0;
 
 function lockSheet() {
+  window.clearTimeout(sheetHold);
   if (document.body.classList.contains("sheet-open")) return;
   sheetScrollY = window.scrollY || document.documentElement.scrollTop || 0;
   document.body.style.top = `-${sheetScrollY}px`;
   document.body.classList.add("sheet-open");
 }
 
-function unlockSheet() {
+function releaseSheet() {
   if (document.getElementById("fiche")?.open || document.getElementById("relief")?.open) return;
   if (!document.body.classList.contains("sheet-open")) return;
   const y = sheetScrollY;
@@ -1893,13 +2003,260 @@ function unlockSheet() {
   requestAnimationFrame(jump);
 }
 
+function unlockSheet() {
+  window.clearTimeout(sheetHold);
+  releaseSheet();
+}
+
+let ficheLeave = 0;
+
+function keepFiche() {
+  ficheLeave += 1;
+  document.getElementById("fiche")?.classList.remove("is-leaving");
+}
+
+function leaveFiche() {
+  const dialog = document.getElementById("fiche");
+  if (!dialog?.open) return;
+  if (!motionOK) {
+    dialog.close();
+    return;
+  }
+  if (dialog.classList.contains("is-leaving")) return;
+  const token = ++ficheLeave;
+  dialog.classList.add("is-leaving");
+  window.setTimeout(() => {
+    if (token !== ficheLeave) return;
+    dialog.classList.remove("is-leaving");
+    if (dialog.open) dialog.close();
+  }, 240);
+}
+
+const foilTilt = {
+  stage: null,
+  pointer: -1,
+  finger: false,
+  raf: 0,
+  x: 0.5,
+  y: 0.5,
+  tx: 0.5,
+  ty: 0.5,
+};
+
+let foilMotionAsked = false;
+let foilMotionOn = false;
+let foilOrientSeen = false;
+let foilPose = null;
+let foilPoseLive = false;
+let reliefLeaving = false;
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function reliefOpen() {
+  const dialog = document.getElementById("relief");
+  return Boolean(dialog?.open && !reliefLeaving);
+}
+
+function kickFoilTilt() {
+  if (foilTilt.raf || !motionOK) return;
+  foilTilt.raf = requestAnimationFrame(stepFoilTilt);
+}
+
+function stepFoilTilt() {
+  foilTilt.raf = 0;
+  const stage = foilTilt.stage;
+  if (!stage?.isConnected || !document.getElementById("relief")?.open) return;
+  if (foilTilt.finger) {
+    foilTilt.x = foilTilt.tx;
+    foilTilt.y = foilTilt.ty;
+  } else {
+    foilTilt.x += (foilTilt.tx - foilTilt.x) * 0.16;
+    foilTilt.y += (foilTilt.ty - foilTilt.y) * 0.16;
+  }
+  const gain = (stage.dataset.foil || "papier") === "papier" ? 0.6 : 1;
+  const rx = 8 + (0.5 - foilTilt.y) * 44 * gain;
+  const ry = -14 + (foilTilt.x - 0.5) * 56 * gain;
+  stage.style.setProperty("--rx", `${rx.toFixed(2)}deg`);
+  stage.style.setProperty("--ry", `${ry.toFixed(2)}deg`);
+  stage.style.setProperty("--mx", `${(50 + (foilTilt.x - 0.5) * 170).toFixed(1)}%`);
+  stage.style.setProperty("--my", `${(50 + (foilTilt.y - 0.5) * 170).toFixed(1)}%`);
+  const left = Math.abs(foilTilt.tx - foilTilt.x) + Math.abs(foilTilt.ty - foilTilt.y);
+  if (foilTilt.finger || left > 0.003) kickFoilTilt();
+}
+
+function aimFoil(stage, clientX, clientY) {
+  const rect = stage.getBoundingClientRect();
+  const rawX = (clientX - rect.left) / (rect.width || 1);
+  const rawY = (clientY - rect.top) / (rect.height || 1);
+  foilTilt.tx = clamp01(0.5 + (rawX - 0.5) * 1.55);
+  foilTilt.ty = clamp01(0.5 + (rawY - 0.5) * 1.55);
+  kickFoilTilt();
+}
+
+function releaseFoil() {
+  foilTilt.finger = false;
+  foilTilt.pointer = -1;
+  if (!foilPoseLive) {
+    foilTilt.tx = 0.5;
+    foilTilt.ty = 0.5;
+  }
+  kickFoilTilt();
+}
+
+function applyPhoneTilt(gamma, beta, mode) {
+  if (!reliefOpen() || foilTilt.finger) return;
+  if (!Number.isFinite(gamma) || !Number.isFinite(beta)) return;
+  if (!foilPose || foilPose.mode !== mode) {
+    foilPose = { mode, gamma, beta };
+    return;
+  }
+  const dx = Math.min(1, Math.max(-1, (gamma - foilPose.gamma) / 24));
+  const dy = Math.min(1, Math.max(-1, (beta - foilPose.beta) / 24));
+  if (!foilPoseLive && Math.abs(dx) < 0.04 && Math.abs(dy) < 0.04) return;
+  foilPoseLive = true;
+  foilTilt.tx = clamp01(0.5 + dx * 0.5);
+  foilTilt.ty = clamp01(0.5 + dy * 0.5);
+  kickFoilTilt();
+}
+
+function onFoilOrientation(event) {
+  if (event.gamma == null || event.beta == null) return;
+  foilOrientSeen = true;
+  applyPhoneTilt(event.gamma, event.beta, "orient");
+}
+
+function onFoilMotion(event) {
+  if (foilOrientSeen || foilTilt.finger || !reliefOpen()) return;
+  const gravity = event.accelerationIncludingGravity;
+  if (!gravity || gravity.x == null || gravity.y == null) return;
+  applyPhoneTilt(gravity.x * 5.5, -gravity.y * 5.5, "motion");
+}
+
+function bindFoilMotion() {
+  if (foilMotionOn) return;
+  foilMotionOn = true;
+  window.addEventListener("deviceorientation", onFoilOrientation, { passive: true });
+  window.addEventListener("devicemotion", onFoilMotion, { passive: true });
+}
+
+function requestFoilMotion() {
+  if (!motionOK || foilMotionAsked || foilMotionOn) return;
+  const Orientation = window.DeviceOrientationEvent;
+  const Motion = window.DeviceMotionEvent;
+  const ask = Orientation && typeof Orientation.requestPermission === "function"
+    ? () => Orientation.requestPermission()
+    : Motion && typeof Motion.requestPermission === "function"
+      ? () => Motion.requestPermission()
+      : null;
+  foilMotionAsked = true;
+  if (!ask) {
+    bindFoilMotion();
+    return;
+  }
+  ask().then((state) => {
+    if (state === "granted") bindFoilMotion();
+  }).catch(() => {});
+}
+
+function resetFoilTilt(stage) {
+  foilPose = null;
+  foilTilt.stage = stage || null;
+  foilTilt.finger = false;
+  foilTilt.pointer = -1;
+  foilTilt.x = 0.5;
+  foilTilt.y = 0.5;
+  foilTilt.tx = 0.5;
+  foilTilt.ty = 0.5;
+  if (stage) kickFoilTilt();
+}
+
+function applyReliefFoil(dialog, card) {
+  const kind = foilKind(card);
+  const art = artSize(card);
+  const stage = dialog.querySelector("[data-tilt]");
+  if (!stage) return;
+  stage.dataset.foil = kind;
+  stage.dataset.art = art;
+  const hint = dialog.querySelector(".hint");
+  if (hint) hint.textContent = foilHint(kind);
+  let holo = stage.querySelector(".holo");
+  if (kind === "papier") {
+    holo?.remove();
+    return;
+  }
+  if (!holo) {
+    holo = document.createElement("span");
+    holo.className = "holo";
+    holo.setAttribute("aria-hidden", "true");
+    const shine = stage.querySelector(".shine");
+    if (shine) stage.insertBefore(holo, shine);
+    else stage.appendChild(holo);
+  }
+  holo.dataset.foil = kind;
+  holo.dataset.art = art;
+}
+
+async function refreshReliefFoil(id, lang) {
+  try {
+    const full = await getCard(id, lang);
+    const flags = variantFlags(full);
+    const current = state.binder.cards[id];
+    if (!current || !flags) return;
+    state.binder.cards[id] = {
+      ...current,
+      rarity: full.rarity || current.rarity || "",
+      variants: flags,
+    };
+    saveBinder();
+    const dialog = document.getElementById("relief");
+    if (dialog?.open && dialog.dataset.card === id) applyReliefFoil(dialog, state.binder.cards[id]);
+    if (state.tab === "classeur") paintBinder();
+  } catch {
+    /* Sans TCGdex, la carte reste en lumière papier. */
+  }
+}
+
+function leaveRelief(after) {
+  const dialog = document.getElementById("relief");
+  const done = () => {
+    reliefLeaving = false;
+    after?.();
+  };
+  if (!dialog?.open) {
+    done();
+    return;
+  }
+  if (!motionOK) {
+    dialog.close();
+    done();
+    return;
+  }
+  if (dialog.classList.contains("is-leaving")) return;
+  reliefLeaving = true;
+  foilTilt.finger = false;
+  dialog.classList.add("is-leaving");
+  window.setTimeout(() => {
+    dialog.classList.remove("is-leaving");
+    if (dialog.open) dialog.close();
+    done();
+  }, 240);
+}
+
 function openRelief(id, slot) {
   const card = state.binder.cards[id];
   const dialog = document.getElementById("relief");
   if (!card || !dialog) return;
+  if (foilKind(card) !== "papier") requestFoilMotion();
+  reliefLeaving = false;
+  dialog.classList.remove("is-leaving");
+  dialog.dataset.card = card.id;
   dialog.innerHTML = reliefHTML(card, slot);
+  resetFoilTilt(dialog.querySelector("[data-tilt]"));
   lockSheet();
   if (!dialog.open) dialog.showModal();
+  if (!variantFlags(card)) refreshReliefFoil(card.id, card.lang || state.market);
 }
 
 function turnBinder(dir) {
@@ -1916,19 +2273,39 @@ function turnBinder(dir) {
     apply();
     return;
   }
-  const finish = () => {
-    sheet.removeEventListener("transitionend", finish);
+  let swapped = false;
+  const swap = () => {
+    if (swapped) return;
+    swapped = true;
+    sheet.removeEventListener("transitionend", onOut);
     apply();
+    sheet.classList.remove("is-turning");
     sheet.style.transition = "none";
-    sheet.style.transform = `rotateY(${dir > 0 ? 68 : -68}deg)`;
+    sheet.style.transform = `rotateY(${dir > 0 ? 14 : -14}deg)`;
     requestAnimationFrame(() => {
-      sheet.style.transition = "transform .32s ease";
-      sheet.style.transform = "rotateY(0deg)";
+      requestAnimationFrame(() => {
+        sheet.style.transition = "transform .42s cubic-bezier(.16,.84,.3,1)";
+        sheet.style.transform = "rotateY(0deg)";
+        const clear = (event) => {
+          if (event.propertyName && event.propertyName !== "transform") return;
+          sheet.removeEventListener("transitionend", clear);
+          sheet.style.transition = "";
+          sheet.style.transform = "";
+        };
+        sheet.addEventListener("transitionend", clear);
+      });
     });
   };
-  sheet.style.transition = "transform .28s ease";
-  sheet.style.transform = `rotateY(${dir > 0 ? -72 : 72}deg)`;
-  sheet.addEventListener("transitionend", finish);
+  const onOut = (event) => {
+    if (event.target !== sheet || event.propertyName !== "transform") return;
+    swap();
+  };
+  sheet.style.animation = "none";
+  sheet.classList.add("is-turning");
+  sheet.style.transition = "transform .32s cubic-bezier(.4,0,.2,1)";
+  sheet.style.transform = `rotateY(${dir > 0 ? -22 : 22}deg)`;
+  sheet.addEventListener("transitionend", onOut);
+  window.setTimeout(swap, 380);
 }
 
 function movePocket(from, to) {
@@ -1993,6 +2370,7 @@ function rangerCard(card) {
 }
 
 let binderTimer = 0;
+let binderScanToken = 0;
 let lift = null;
 let suppressPocketClick = false;
 
@@ -2022,11 +2400,11 @@ async function placeBinderCard(id) {
   const safe = cleanId(id, "");
   if (!safe) return;
   let card = state.binder.cards[safe] || cache.get(cacheKey(safe));
-  if (!card?.image) {
+  if (!card?.image || !variantFlags(card)) {
     try {
-      card = await getCard(safe);
+      card = await getCard(safe, card?.lang || state.market);
     } catch {
-      return;
+      if (!card?.name) return;
     }
   }
   let page = state.binder.page;
@@ -2054,6 +2432,52 @@ async function placeBinderCard(id) {
   paintBinder();
 }
 
+function binderHitList(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const seen = new Set();
+  const hits = [];
+  rows.forEach((card) => {
+    const id = cleanId(card?.id, "");
+    if (!id || !card?.name || seen.has(id)) return;
+    seen.add(id);
+    hits.push(card);
+  });
+  return hits;
+}
+
+function paintBinderArt(id) {
+  const root = document.getElementById("binder-hits");
+  const card = state.binderHits.find((item) => item.id === id);
+  if (!root || !card) return;
+  const button = [...root.querySelectorAll(".binder-hit")].find((node) => node.dataset.id === id);
+  const art = button?.querySelector(".binder-hit-art");
+  if (!art) return;
+  const markup = imgTag(resolveCard(card), "low", true);
+  if (!markup.includes("<img")) return;
+  art.innerHTML = markup;
+  const img = art.querySelector("img");
+  if (img instanceof HTMLImageElement) revealScan(img);
+}
+
+async function hydrateBinderScans() {
+  const token = ++binderScanToken;
+  const query = state.binderQuery;
+  const missing = state.binderHits.filter((card) => !imgTag(resolveCard(card), "low", true).includes("<img"));
+  if (!missing.length) return;
+  await pool(missing, 4, async (brief) => {
+    if (token !== binderScanToken || state.binderQuery !== query) return;
+    try {
+      const full = await getCard(brief.id, brief.lang || state.market);
+      if (token !== binderScanToken || state.binderQuery !== query) return;
+      const index = state.binderHits.findIndex((item) => item.id === brief.id);
+      if (index >= 0) state.binderHits[index] = { ...state.binderHits[index], ...full, id: brief.id };
+      paintBinderArt(brief.id);
+    } catch {
+      /* Le monogramme reste si aucun scan n'existe. */
+    }
+  });
+}
+
 async function searchBinder(raw) {
   const query = String(raw || "").trim();
   state.binderQuery = query;
@@ -2064,9 +2488,8 @@ async function searchBinder(raw) {
   }
   try {
     const list = await fetchJSON(`/cards?name=${encodeURIComponent(query)}`);
-    const rows = Array.isArray(list) ? list : [];
     if (state.binderQuery !== query) return;
-    state.binderHits = rows.slice(0, 8);
+    state.binderHits = binderHitList(list);
   } catch {
     if (state.binderQuery !== query) return;
     state.binderHits = [];
@@ -2436,7 +2859,11 @@ function render() {
   else if (state.tab === "etb") app.innerHTML = etbHTML();
   else if (state.tab === "univers") app.innerHTML = universHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
-  else if (state.tab === "classeur") app.innerHTML = binderHTML();
+  else if (state.tab === "classeur") {
+    app.innerHTML = binderHTML();
+    hydrateBinderFoils();
+    hydrateBinderScans();
+  }
   else if (state.tab === "collection") app.innerHTML = collectionHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
@@ -2489,7 +2916,17 @@ function watchMore() {
   document.querySelectorAll("[data-more]").forEach((node) => moreObserver.observe(node));
 }
 
+function risePage() {
+  if (!motionOK) return;
+  const app = document.getElementById("app");
+  if (!app) return;
+  app.classList.remove("is-rising");
+  void app.offsetWidth;
+  app.classList.add("is-rising");
+}
+
 function setTab(tab) {
+  const changed = TABS.includes(tab) && tab !== state.tab;
   if (tab !== "collection") {
     const url = new URL(location.href);
     if (url.searchParams.has("voir")) {
@@ -2501,6 +2938,7 @@ function setTab(tab) {
   if ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD") loadFx();
   rememberTab(tab);
   render();
+  if (changed) risePage();
   window.scrollTo(0, 0);
   if (tab === "extensions") selectSeries(state.browseSeriesId);
   if (tab === "favoris") refreshFavs();
@@ -2962,6 +3400,7 @@ function productHTML(item, family) {
 function openProduct(item, family) {
   productOpen = { id: String(item.id), family };
   const dialog = document.getElementById("fiche");
+  keepFiche();
   dialog.dataset.mode = "";
   dialog.dataset.current = "";
   dialog.innerHTML = productHTML(item, family);
@@ -2976,6 +3415,7 @@ async function openFiche(id, modeOrOpts) {
   const safe = cleanId(id, "");
   if (!safe) return;
   const dialog = document.getElementById("fiche");
+  keepFiche();
   dialog.dataset.current = safe;
   dialog.dataset.lang = lang;
   dialog.dataset.mode = opts.mode === "random" ? "random" : "";
@@ -3101,9 +3541,18 @@ function bind() {
 
   const relief = document.getElementById("relief");
   dialog.addEventListener("close", unlockSheet);
-  relief?.addEventListener("close", unlockSheet);
+  relief?.addEventListener("close", () => {
+    foilTilt.finger = false;
+    foilTilt.stage = null;
+    reliefLeaving = false;
+    unlockSheet();
+  });
+  relief?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    leaveRelief();
+  });
   relief?.addEventListener("click", (event) => {
-    if (event.target === relief) relief.close();
+    if (event.target === relief) leaveRelief();
   });
 
   document.addEventListener("pointerdown", (event) => {
@@ -3152,8 +3601,13 @@ function bind() {
     hideGhost();
   });
 
+  dialog.addEventListener("cancel", (event) => {
+    if (!motionOK || !dialog.open || dialog.classList.contains("is-leaving")) return;
+    event.preventDefault();
+    leaveFiche();
+  });
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) dialog.close();
+    if (event.target === dialog) leaveFiche();
   });
 
   document.addEventListener("click", (event) => {
@@ -3194,8 +3648,8 @@ function bind() {
       if (kind === "place") placeBinderCard(binderEl.dataset.id);
       if (kind === "remove") {
         const slot = Number(binderEl.dataset.slot);
-        document.getElementById("relief")?.close();
-        removeSlot(state.binder.page, slot);
+        const page = state.binder.page;
+        leaveRelief(() => removeSlot(page, slot));
       }
       return;
     }
@@ -3227,8 +3681,9 @@ function bind() {
     if (actionEl) {
       const action = actionEl.dataset.action;
       if (action === "close") {
-        actionEl.closest("dialog")?.close();
-        unlockSheet();
+        const host = actionEl.closest("dialog");
+        if (host?.id === "relief") leaveRelief();
+        else leaveFiche();
       }
       if (action === "retry") {
         if (state.view === "search") runSearch(state.query);
@@ -3263,8 +3718,9 @@ function bind() {
         }
       }
       if (action === "open-fiche") {
-        document.getElementById("relief")?.close();
-        openFiche(actionEl.dataset.id, { lang: actionEl.dataset.lang || state.market });
+        const id = actionEl.dataset.id;
+        const lang = actionEl.dataset.lang || state.market;
+        leaveRelief(() => openFiche(id, { lang }));
       }
       if (action === "coll-add") {
         const id = actionEl.dataset.id;
@@ -3397,23 +3853,47 @@ function bind() {
     input.focus();
   });
 
+  document.addEventListener("pointerdown", (event) => {
+    const stage = event.target.closest?.("#relief [data-tilt]");
+    if (!stage || !motionOK || reliefLeaving) return;
+    event.preventDefault();
+    foilTilt.stage = stage;
+    foilTilt.finger = true;
+    foilTilt.pointer = event.pointerId;
+    stage.setPointerCapture?.(event.pointerId);
+    aimFoil(stage, event.clientX, event.clientY);
+  });
+
   document.addEventListener("pointermove", (event) => {
+    if (foilTilt.finger && event.pointerId === foilTilt.pointer && foilTilt.stage) {
+      aimFoil(foilTilt.stage, event.clientX, event.clientY);
+      return;
+    }
     if (!motionOK) return;
     const stage = event.target.closest?.("[data-tilt]");
-    if (!stage) return;
+    if (!stage || stage.closest("#relief")) return;
     const rect = stage.getBoundingClientRect();
-    const strong = stage.classList.contains("is-holo");
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
-    stage.style.setProperty("--rx", `${(0.5 - y) * (strong ? 18 : 8)}deg`);
-    stage.style.setProperty("--ry", `${(x - 0.5) * (strong ? 26 : 10)}deg`);
+    stage.style.setProperty("--rx", `${(0.5 - y) * 8}deg`);
+    stage.style.setProperty("--ry", `${(x - 0.5) * 10}deg`);
     stage.style.setProperty("--mx", `${x * 100}%`);
     stage.style.setProperty("--my", `${y * 100}%`);
   });
 
+  document.addEventListener("pointerup", (event) => {
+    if (!foilTilt.finger || event.pointerId !== foilTilt.pointer) return;
+    releaseFoil();
+  });
+
+  document.addEventListener("pointercancel", (event) => {
+    if (!foilTilt.finger || event.pointerId !== foilTilt.pointer) return;
+    releaseFoil();
+  });
+
   document.addEventListener("pointerout", (event) => {
     const stage = event.target.closest?.("[data-tilt]");
-    if (!stage || stage.contains(event.relatedTarget)) return;
+    if (!stage || stage.closest("#relief") || stage.contains(event.relatedTarget)) return;
     stage.style.removeProperty("--rx");
     stage.style.removeProperty("--ry");
     stage.style.removeProperty("--mx");

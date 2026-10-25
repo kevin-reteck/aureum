@@ -833,6 +833,26 @@ dialog {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
   overflow: hidden;
   overscroll-behavior: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 220ms ease-out,
+    transform 220ms ease-out;
+  transition:
+    opacity 220ms ease-out,
+    transform 220ms ease-out,
+    overlay 220ms ease-out allow-discrete,
+    display 220ms ease-out allow-discrete;
+}
+dialog[open] {
+  opacity: 1;
+  transform: none;
+}
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 body.sheet-open {
   position: fixed;
@@ -842,6 +862,26 @@ body.sheet-open {
 dialog::backdrop {
   background: rgba(6, 5, 4, 0.72);
   backdrop-filter: blur(8px);
+  opacity: 0;
+  transition:
+    opacity 220ms ease-out,
+    overlay 220ms ease-out allow-discrete,
+    display 220ms ease-out allow-discrete;
+}
+dialog[open]::backdrop {
+  opacity: 1;
+}
+dialog.is-leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+dialog.is-leaving::backdrop {
+  opacity: 0;
+}
+@starting-style {
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 .fiche {
   display: grid;
@@ -959,6 +999,12 @@ dialog::backdrop {
   border-radius: 4px 14px 14px 4px;
   padding: 16px 14px 16px 16px;
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.32);
+  animation: binder-open 0.48s cubic-bezier(0.16, 0.84, 0.32, 1);
+}
+.binder-sheet.is-turning { box-shadow: -12px 20px 30px rgba(0, 0, 0, 0.36); }
+@keyframes binder-open {
+  from { transform: rotateY(-12deg); }
+  to { transform: rotateY(0deg); }
 }
 .binder-grid {
   display: grid;
@@ -998,13 +1044,26 @@ dialog::backdrop {
   min-height: var(--control);
   padding: 0 1rem;
   font: inherit;
+  font-size: 16px;
 }
-.binder-hits { display: flex; gap: 10px; overflow-x: auto; margin-top: 12px; padding-bottom: 6px; }
+.binder { min-width: 0; max-width: 100%; }
+.binder-hits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 96px), 1fr));
+  gap: 12px 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 12px;
+}
+.binder-hits .note { grid-column: 1 / -1; margin: 0; }
 .binder-hit {
-  flex: 0 0 92px;
+  min-width: 0;
+  width: 100%;
   display: grid;
   gap: 6px;
-  justify-items: center;
+  justify-items: stretch;
+  align-content: start;
   border: 0;
   background: transparent;
   color: var(--paper);
@@ -1012,8 +1071,35 @@ dialog::backdrop {
   font-size: 0.78rem;
   text-align: center;
 }
-.binder-hit-art { width: 100%; aspect-ratio: 63 / 88; border-radius: 8px; overflow: hidden; background: #16130f; }
-.binder-hit-art img { width: 100%; height: 100%; object-fit: cover; }
+.binder-hit-name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.binder-hit-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 63 / 88;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #16130f;
+}
+.binder-hit-art img { width: 100%; height: 100%; object-fit: cover; opacity: 1; }
+.binder-hit-art img.is-broken { opacity: 0; }
+.binder-hit-art .monogram { font-size: 1.35rem; letter-spacing: 0.08em; }
+.binder-hit-art:has(img.is-broken)::after {
+  content: attr(data-label);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  letter-spacing: 0.08em;
+  color: var(--gold-2);
+}
 #binder-ghost {
   position: fixed;
   left: 0;
@@ -1031,30 +1117,71 @@ dialog::backdrop {
   box-shadow: none;
   overflow: visible;
 }
-.relief { position: relative; display: grid; justify-items: center; gap: 12px; padding: 18px 8px 8px; }
-.relief-stage { perspective: 900px; }
-.stage.is-holo {
-  width: min(320px, 74vw);
-  transform: rotateX(var(--rx, 8deg)) rotateY(var(--ry, -16deg));
-  transition: transform 0.08s linear;
+.relief { position: relative; display: grid; justify-items: center; gap: 12px; padding: 18px 8px calc(12px + env(safe-area-inset-bottom)); }
+.relief-stage {
+  perspective: 1100px;
+  animation: relief-lift 0.44s cubic-bezier(0.16, 0.84, 0.28, 1);
 }
-.relief .close { position: static; justify-self: end; }
+.relief .stage {
+  width: min(320px, 74vw);
+  touch-action: none;
+  transform: rotateX(var(--rx, 8deg)) rotateY(var(--ry, -14deg));
+  transition: none;
+}
+.relief .close { position: relative; z-index: 2; justify-self: end; }
+.relief .fiche-actions { position: relative; z-index: 2; }
+.relief .shine {
+  background: radial-gradient(340px circle at var(--mx, 38%) var(--my, 24%), rgba(255, 248, 230, 0.2), transparent 46%);
+}
+#relief.is-leaving .relief-stage {
+  animation: relief-back 0.24s cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
+}
+#relief.is-leaving .relief-name,
+#relief.is-leaving .hint,
+#relief.is-leaving .fiche-actions,
+#relief.is-leaving .close {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+@keyframes relief-lift {
+  from { opacity: 0; transform: translateY(22px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes relief-back {
+  to { opacity: 0; transform: translateY(14px) scale(0.96); }
+}
 .holo {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
   background:
-    linear-gradient(118deg, transparent 12%, rgba(255, 70, 130, 0.72) 30%, rgba(255, 220, 70, 0.75) 42%, rgba(70, 255, 190, 0.7) 54%, rgba(70, 150, 255, 0.75) 66%, rgba(210, 70, 255, 0.65) 78%, transparent 92%),
-    repeating-linear-gradient(118deg, transparent 0 2px, rgba(255, 255, 255, 0.35) 2px 3px);
-  background-size: 240% 240%, auto;
-  background-position: var(--mx, 30%) var(--my, 24%), 0 0;
+    linear-gradient(108deg, transparent 8%, rgba(255, 70, 130, 0.55) 24%, rgba(255, 214, 80, 0.6) 38%, rgba(70, 255, 196, 0.52) 52%, rgba(70, 150, 255, 0.58) 66%, rgba(196, 80, 255, 0.48) 80%, transparent 94%),
+    repeating-linear-gradient(108deg, transparent 0 3px, rgba(255, 255, 255, 0.22) 3px 4px);
+  background-size: 220% 220%, auto;
+  background-position: var(--mx, 28%) var(--my, 32%), 0 0;
   mix-blend-mode: screen;
-  opacity: 1;
+  opacity: 0.78;
 }
-.holo.is-quiet { opacity: 0.42; }
+.holo[data-foil="fenetre"] { clip-path: inset(18.5% 9% 49% 9% round 2px); }
+.holo[data-foil="fenetre"][data-art="large"] { clip-path: inset(13.5% 4.5% 44% 4.5% round 2px); }
+.holo[data-foil="plein"] { opacity: 0.46; }
+.holo[data-foil="cadre"] {
+  opacity: 0.4;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M9 18.5H91V51H9Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M9 18.5H91V51H9Z'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+.holo[data-foil="cadre"][data-art="large"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M4.5 13.5H95.5V56H4.5Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M4.5 13.5H95.5V56H4.5Z'/%3E%3C/svg%3E");
+}
+.holo.is-quiet { opacity: 0.3; }
 .pocket.is-full:hover .holo.is-quiet,
-.pocket.is-full:focus-visible .holo.is-quiet { opacity: 0.72; }
+.pocket.is-full:focus-visible .holo.is-quiet { opacity: 0.55; }
 .relief-name { margin: 0; font-family: var(--serif); font-size: 1.6rem; font-weight: 560; }
 @media (max-width: 720px) {
   .binder-sheet { padding: 10px 8px 10px 18px; }
@@ -1155,7 +1282,19 @@ dialog::backdrop {
   .hero { grid-template-columns: 1fr; gap: 8px; padding-top: 16px; }
   .fiche { grid-template-columns: 1fr; }
   .fiche-art .stage { max-width: 280px; margin: 0 auto; }
-  select, input, textarea { font-size: 16px; }
+  .binder-search .field input,
+  .search input,
+  .sealed-tools input,
+  .sealed-tools select,
+  .coll-label input,
+  .coll-label textarea,
+  #porte-mot,
+  label.field > select,
+  label.field > input:not([type="checkbox"]):not([type="radio"]),
+  label.field > textarea,
+  select,
+  input,
+  textarea { font-size: 16px; }
 }
 
 @media (max-width: 720px) {
@@ -1233,6 +1372,7 @@ dialog::backdrop {
     color: var(--paper);
   }
   .relief { padding-top: calc(18px + env(safe-area-inset-top)); }
+  #relief { overflow: auto; overscroll-behavior: contain; }
   .fiche-body {
     max-height: none;
     overflow: visible;
@@ -1272,6 +1412,12 @@ dialog::backdrop {
   }
 }
 
+@keyframes aureum-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+#app.is-rising { animation: aureum-rise 220ms ease-out; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {
@@ -1280,7 +1426,9 @@ dialog::backdrop {
   }
   .fan-card:nth-child(1),
   .fan-card:nth-child(2),
-  .fan-card:nth-child(3) { transform: none; }
+  .fan-card:nth-child(3),
+  dialog,
+  #app.is-rising { transform: none; }
 }
 
 .cote-hero {
