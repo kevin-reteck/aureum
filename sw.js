@@ -25,7 +25,12 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((fenetres) => {
+        const version = CACHE.slice("aureum-v".length);
+        fenetres.forEach((fenetre) => fenetre.postMessage({ type: "aureum-recharge", version }));
+      }),
   );
 });
 

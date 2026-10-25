@@ -35,6 +35,67 @@
         const raison = event.reason;
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
+
+      const VERSION_PAGE = "52";
+      let rechargeEnCours = false;
+
+      function saisieEnCours() {
+        const dialog = document.getElementById("signal");
+        const texte = document.getElementById("signal-texte");
+        return Boolean(dialog?.open && texte?.value.trim());
+      }
+
+      function rechargerPourMaj(version) {
+        if (rechargeEnCours || saisieEnCours()) return;
+        if (version && sessionStorage.getItem("aureum.maj") === version) return;
+        if (version) sessionStorage.setItem("aureum.maj", version);
+        rechargeEnCours = true;
+        location.reload();
+      }
+
+      async function verifierMaj() {
+        if (rechargeEnCours || saisieEnCours()) return;
+        try {
+          const reponse = await fetch(new URL("sw.js", location.href), { cache: "no-store" });
+          if (!reponse.ok) return;
+          const trouve = (await reponse.text()).match(/const CACHE = "aureum-v(\d+)"/);
+          const version = trouve ? trouve[1] : "";
+          if (!version || version === VERSION_PAGE) return;
+          rechargerPourMaj(version);
+        } catch (error) { /* Hors ligne : la page ouverte reste. */ }
+      }
+
+      function demanderSw() {
+        if (!("serviceWorker" in navigator)) return;
+        navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
+      }
+
+      if ("serviceWorker" in navigator) {
+        const avaitUnSw = Boolean(navigator.serviceWorker.controller);
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (avaitUnSw) rechargerPourMaj();
+        });
+        navigator.serviceWorker.addEventListener("message", (event) => {
+          const version = event.data?.type === "aureum-recharge" ? String(event.data.version || "") : "";
+          if (!version || version === VERSION_PAGE) return;
+          rechargerPourMaj(version);
+        });
+      }
+
+      function surveillerMaj() {
+        demanderSw();
+        verifierMaj();
+      }
+
+      window.addEventListener("load", surveillerMaj);
+      window.addEventListener("focus", surveillerMaj);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") surveillerMaj();
+      });
+      setInterval(() => {
+        if (document.visibilityState === "hidden") return;
+        surveillerMaj();
+      }, 20000);
     </script>
   </head>
   <body class="locked">
@@ -190,6 +251,7 @@
             <li>Un clic sur une carte ouvre de nouveau sa fiche.</li>
             <li>Un signalement s'envoie, avec la photo de l'écran, et tout le monde le voit.</li>
             <li>Les ETB, les coffrets et les UPC entrent dans la collection.</li>
+            <li>Si l'app est restée ouverte, une mise à jour recharge la page.</li>
           </ul>
         </div>
         <div class="journal-bas">

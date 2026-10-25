@@ -4815,16 +4815,8 @@ function initialTab() {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-  let recharge = false;
-  if (navigator.serviceWorker.controller) {
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (recharge) return;
-      recharge = true;
-      location.reload();
-    });
-  }
   const register = () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js").then((registration) => registration.update()).catch(() => {});
   };
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register);
