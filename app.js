@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=46";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=47";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3642,7 +3642,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=46", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=47", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4417,6 +4417,14 @@ function initialTab() {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
+  let recharge = false;
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (recharge) return;
+      recharge = true;
+      location.reload();
+    });
+  }
   const register = () => {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   };
@@ -4497,7 +4505,7 @@ function applyMarket(lang) {
 
 const JOURNAL_KEY = "aureum.journal";
 
-// La liste « Nouveautés » dans index.html est le journal. En changer le texte le rouvre une fois, après la connexion.
+// La liste « Nouveautés » dans index.html est le journal. En changer le texte le rouvre une fois, même si la personne est déjà connectée.
 function texteJournal() {
   return [...document.querySelectorAll("#journal .journal-list li")]
     .map((item) => item.textContent.replace(/\s+/g, " ").trim())
@@ -4566,6 +4574,9 @@ function ouvrirJournal() {
 
 function boot() {
   ouvrirJournal();
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) ouvrirJournal();
+  });
   const email = emailSession();
   const mail = document.getElementById("compte-email");
   if (mail && email) mail.textContent = email;

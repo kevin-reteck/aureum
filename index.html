@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=46">
+    <link rel="stylesheet" href="styles.css?v=47">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
@@ -187,7 +187,7 @@
             <li>Pour un problème, l'insecte est à côté de Fermer.</li>
             <li>La carte en grand va jusqu'en bas de l'écran.</li>
             <li>Tu restes connecté quand la page se recharge.</li>
-            <li>À chaque mise à jour, ce message s'ouvre une fois après la connexion.</li>
+            <li>Même déjà connecté, une mise à jour rouvre ce message une fois.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -198,7 +198,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=46";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=47";
 
       const porte = document.getElementById("porte");
       const entrerForm = document.getElementById("porte-entrer");
@@ -220,7 +220,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=46");
+        import("./app.js?v=47");
       }
 
       function fermerPorte() {
