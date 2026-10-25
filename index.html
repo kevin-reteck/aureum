@@ -16,12 +16,23 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=38">
+    <link rel="stylesheet" href="styles.css?v=39">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
         if (localStorage.getItem("aureum.porte") === "1") document.documentElement.dataset.porte = "ok";
       } catch (error) { /* L'appareil refuse le stockage : la porte reste fermée. */ }
+      window.aureumErreurs = [];
+      function aureumNoterErreur(texte) {
+        const liste = window.aureumErreurs;
+        liste.push(String(texte || "erreur").slice(0, 240));
+        if (liste.length > 8) liste.splice(0, liste.length - 8);
+      }
+      window.addEventListener("error", (event) => aureumNoterErreur(event.message));
+      window.addEventListener("unhandledrejection", (event) => {
+        const raison = event.reason;
+        aureumNoterErreur(raison && raison.message ? raison.message : raison);
+      });
     </script>
   </head>
   <body class="locked">
@@ -76,7 +87,34 @@
       <p>Données TCGdex. Cotes Cardmarket en euros, indicatives.</p>
       <p>Aureum est un cabinet de fan, indépendant de Nintendo, Creatures, Game Freak et The Pokémon Company. Les noms et les visuels restent la propriété de leurs ayants droit.</p>
       <p>Sur iPhone : bouton Partager, puis Sur l'écran d'accueil.</p>
+      <p><button class="signal-link" id="signaler" type="button">Signaler un problème</button></p>
     </footer>
+    <dialog id="signal" aria-label="Signaler un problème">
+      <form class="signal" id="signal-form">
+        <div class="signal-top">
+          <p class="kicker">Signalement</p>
+          <button class="close" type="button" data-signal="close">Fermer</button>
+        </div>
+        <div class="signal-body">
+          <h2>Quelque chose cloche.</h2>
+          <p class="hint" id="signal-note"></p>
+          <label class="field" for="signal-texte">Que s'est-il passé ?
+            <textarea id="signal-texte" rows="4" required maxlength="800" placeholder="Le bouton, l'écran, ce que vous attendiez."></textarea>
+          </label>
+          <figure class="signal-shot">
+            <img id="signal-apercu" alt="Capture de l'écran au moment du signalement" hidden>
+            <figcaption class="hint" id="signal-contexte"></figcaption>
+          </figure>
+          <div class="fiche-actions">
+            <button class="btn solid" type="submit">Garder</button>
+            <button class="btn" type="button" data-signal="partager">Partager à Cursor</button>
+          </div>
+          <p class="hint">Sans base de données, le journal reste sur cet appareil. Partagez la capture et le texte à Cursor, en mode Ask : il fait un debrief, sans modifier le code. Pour qu'il les relise plus tard, déposez les fichiers dans le dossier signalements du dépôt.</p>
+          <h3>Sur cet appareil</h3>
+          <div id="signal-list"></div>
+        </div>
+      </form>
+    </dialog>
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script>
@@ -90,7 +128,7 @@
       function ouvrirCabinet() {
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=38");
+        import("./app.js?v=39");
       }
 
       async function empreinte(texte) {

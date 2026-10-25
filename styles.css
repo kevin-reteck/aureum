@@ -1301,6 +1301,112 @@ dialog.is-leaving::backdrop {
 }
 .colophon p { margin: 0 0 8px; }
 .colophon p:first-child { color: rgba(244, 239, 230, 0.78); }
+.signal-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold-2);
+  min-height: 44px;
+}
+#signal {
+  width: min(560px, calc(100vw - 28px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.signal { display: grid; gap: 8px; }
+.signal-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 16px 10px 22px;
+  background: #14120f;
+}
+.signal-top .kicker { margin: 0; }
+.signal-top .close { position: static; }
+.signal-body {
+  display: grid;
+  gap: 12px;
+  padding: 8px 22px 28px;
+}
+.signal textarea {
+  width: 100%;
+  margin-top: 6px;
+  min-height: 112px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #14120f;
+  color: var(--paper);
+  padding: 12px 14px;
+  resize: vertical;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 16px;
+  line-height: 1.45;
+}
+.signal-shot { margin: 0; }
+.signal-shot img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  object-position: top;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #100e0b;
+}
+.signal-item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  text-align: left;
+}
+.signal-voir {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.signal-item img,
+.signal-manque {
+  width: 52px;
+  height: 72px;
+  object-fit: cover;
+  object-position: top;
+  border-radius: 6px;
+  background: #100e0b;
+  border: 1px solid var(--line);
+}
+.signal-item strong {
+  display: block;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.signal-item span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.signal-vide { margin: 0; }
 
 .monogram {
   display: grid;
@@ -1438,6 +1544,17 @@ dialog.is-leaving::backdrop {
     overflow: auto;
     overscroll-behavior: contain;
   }
+  #signal {
+    width: auto;
+    max-width: none;
+  }
+  #signal .signal { padding-top: 0; }
+  #signal .signal-body { padding: 8px 16px calc(28px + max(env(safe-area-inset-bottom), 34px)); }
+  #signal .signal-top {
+    padding-inline: 16px;
+    padding-top: calc(8px + max(env(safe-area-inset-top), 59px));
+  }
+  #signal .close { min-height: 44px; padding-inline: 16px; }
   .fiche-body {
     max-height: none;
     overflow: visible;

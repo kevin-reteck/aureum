@@ -3457,6 +3457,368 @@ function toggleFav(id, lang = state.market) {
   if (state.tab === "favoris") render();
 }
 
+const SIGNAL_KEY = "aureum.signalements";
+const SIGNAL_MAX = 12;
+
+function horlogeParis(date = new Date()) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function idFichier(id) {
+  return String(id || "sans-id").replace(/[^\w.-]+/g, "").slice(0, 48) || "sans-id";
+}
+
+function srcCapture(shot) {
+  return typeof shot === "string" && /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(shot) ? shot : "";
+}
+
+function idSignal() {
+  const parts = new Intl.DateTimeFormat("fr-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const lire = (type) => parts.find((part) => part.type === type)?.value || "00";
+  const suffixe = Math.random().toString(36).slice(2, 6);
+  return `${lire("year")}${lire("month")}${lire("day")}-${lire("hour")}${lire("minute")}-${suffixe}`;
+}
+
+function lireSignaux() {
+  try {
+    const brut = JSON.parse(localStorage.getItem(SIGNAL_KEY) || "[]");
+    return Array.isArray(brut) ? brut : [];
+  } catch {
+    return [];
+  }
+}
+
+function ecrireSignaux(liste) {
+  const garde = liste.slice(0, SIGNAL_MAX);
+  const tenter = (valeur) => {
+    localStorage.setItem(SIGNAL_KEY, JSON.stringify(valeur));
+  };
+  try {
+    tenter(garde);
+    return true;
+  } catch {
+    try {
+      tenter(garde.map((item, index) => (index === 0 ? item : { ...item, shot: "" })));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function contexteSignal() {
+  const fiche = document.getElementById("fiche");
+  const relief = document.getElementById("relief");
+  const bouts = [`Onglet ${state.tab || "galerie"}`];
+  if (state.view && state.view !== "set") bouts.push(state.view);
+  if (state.setId) bouts.push(`Extension ${state.setId}`);
+  if (fiche?.open && fiche.dataset.current) bouts.push(`Fiche ${fiche.dataset.current}`);
+  if (relief?.open && relief.dataset.card) bouts.push(`Relief ${relief.dataset.card}`);
+  bouts.push(`${window.innerWidth} × ${window.innerHeight}`);
+  return bouts.join(" · ");
+}
+
+function texteDebrief(report) {
+  const erreurs = report.errors?.length
+    ? report.errors.map((ligne) => `- ${ligne}`).join("\n")
+    : "- Aucune erreur JavaScript récente.";
+  return [
+    "Debrief Aureum — mode Ask.",
+    "Ne modifie pas le code. Décris le symptôme, ce que montre la capture, la cause probable et une piste.",
+    "",
+    `Identifiant : ${report.id}`,
+    `Quand : ${report.when} (Paris)`,
+    `Où : ${report.where}`,
+    `Adresse : ${report.url}`,
+    `Appareil : ${report.ua}`,
+    "",
+    "Ce que la personne voit :",
+    report.text,
+    "",
+    "Erreurs :",
+    erreurs,
+    "",
+    report.shot ? `Capture jointe : signalement-${idFichier(report.id)}.jpg` : "Pas de capture.",
+  ].join("\n");
+}
+
+function chargerCapture() {
+  if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = new URL("vendor/html2canvas.min.js?v=39", location.href).href;
+    script.onload = () => {
+      if (typeof window.html2canvas === "function") resolve(window.html2canvas);
+      else reject(new Error("capture"));
+    };
+    script.onerror = () => reject(new Error("capture"));
+    document.head.appendChild(script);
+  });
+}
+
+function moderniserCouleur(value) {
+  return String(value).replace(/color\(\s*srgb(?:-linear)?\s+([0-9.]+%?)\s+([0-9.]+%?)\s+([0-9.]+%?)(?:\s*\/\s*([0-9.]+%?))?\s*\)/gi, (_, r, g, b, a) => {
+    const canal = (part) => {
+      const texte = String(part);
+      return texte.endsWith("%") ? Math.round(parseFloat(texte) * 2.55) : Math.round(parseFloat(texte) * 255);
+    };
+    const rouge = canal(r);
+    const vert = canal(g);
+    const bleu = canal(b);
+    if (a == null) return `rgb(${rouge}, ${vert}, ${bleu})`;
+    const alpha = String(a).endsWith("%") ? parseFloat(a) / 100 : parseFloat(a);
+    return `rgba(${rouge}, ${vert}, ${bleu}, ${alpha})`;
+  });
+}
+
+function figerCouleurs(doc) {
+  const props = ["color", "backgroundColor", "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor", "outlineColor", "boxShadow", "backgroundImage", "textDecorationColor"];
+  const vue = doc.defaultView;
+  if (document.body.classList.contains("sheet-open")) {
+    doc.querySelectorAll("header, main, footer").forEach((element) => element.remove());
+  }
+  doc.querySelectorAll("*").forEach((element) => {
+    const style = vue.getComputedStyle(element);
+    props.forEach((prop) => {
+      const value = style[prop];
+      if (value && value.includes("color(")) element.style[prop] = moderniserCouleur(value);
+    });
+  });
+}
+
+async function priseEcran() {
+  const html2canvas = await chargerCapture();
+  const width = Math.max(1, Math.round(window.innerWidth));
+  const height = Math.max(1, Math.round(window.innerHeight));
+  const feuille = document.body.classList.contains("sheet-open");
+  const toile = await html2canvas(document.body, {
+    x: feuille ? 0 : window.scrollX,
+    y: feuille ? 0 : window.scrollY,
+    width,
+    height,
+    windowWidth: width,
+    windowHeight: height,
+    scrollX: feuille ? 0 : window.scrollX,
+    scrollY: feuille ? 0 : window.scrollY,
+    scale: Math.min(1.5, 520 / width),
+    useCORS: true,
+    backgroundColor: "#0b0a08",
+    logging: false,
+    ignoreElements: (element) => element.id === "signal" || element.id === "porte",
+    onclone: figerCouleurs,
+  });
+  return toile.toDataURL("image/jpeg", 0.62);
+}
+
+function brouillonSignal(shot) {
+  return {
+    id: idSignal(),
+    when: horlogeParis(),
+    where: contexteSignal(),
+    url: location.href,
+    ua: navigator.userAgent,
+    errors: [...(window.aureumErreurs || [])],
+    text: "",
+    shot: shot || "",
+  };
+}
+
+function paintSignaux() {
+  const liste = document.getElementById("signal-list");
+  if (!liste) return;
+  const signaux = lireSignaux();
+  if (!signaux.length) {
+    liste.innerHTML = `<p class="hint signal-vide">Aucun signalement sur cet appareil.</p>`;
+    return;
+  }
+  liste.innerHTML = signaux.map((report) => {
+    const src = srcCapture(report.shot);
+    return `
+    <div class="signal-item">
+      ${src ? `<img src="${src}" alt="">` : `<span class="signal-manque" aria-hidden="true"></span>`}
+      <button class="signal-voir" type="button" data-signal="voir" data-id="${esc(report.id)}">
+        <strong>${esc(report.when)}</strong>
+        <span>${esc(report.text)}</span>
+      </button>
+      <button class="text-btn" type="button" data-signal="retirer" data-id="${esc(report.id)}">Retirer</button>
+    </div>`;
+  }).join("");
+}
+
+let signalCourant = null;
+
+function montrerSignal(report, note) {
+  signalCourant = report;
+  const apercu = document.getElementById("signal-apercu");
+  const contexte = document.getElementById("signal-contexte");
+  const texte = document.getElementById("signal-texte");
+  const ligne = document.getElementById("signal-note");
+  if (apercu) {
+    const src = srcCapture(report.shot);
+    apercu.src = src;
+    apercu.hidden = !src;
+  }
+  if (contexte) contexte.textContent = report.where || "";
+  if (texte && document.activeElement !== texte) texte.value = report.text || "";
+  if (ligne && note) ligne.textContent = note;
+}
+
+async function ouvrirSignal() {
+  const dialog = document.getElementById("signal");
+  const bouton = document.getElementById("signaler");
+  if (!dialog || dialog.open) return;
+  if (bouton) bouton.disabled = true;
+  let shot = "";
+  try {
+    shot = await priseEcran();
+  } catch {
+    shot = "";
+  } finally {
+    if (bouton) bouton.disabled = false;
+  }
+  const report = brouillonSignal(shot);
+  montrerSignal(report, shot
+    ? "La capture est prise. Décrivez ce qui cloche, puis gardez le signalement ou partagez-le à Cursor."
+    : "La capture a échoué. Le texte et le contexte suffisent pour un debrief.");
+  const texte = document.getElementById("signal-texte");
+  if (texte) texte.value = "";
+  paintSignaux();
+  lockSheet();
+  if (!dialog.open) dialog.showModal();
+  texte?.focus();
+}
+
+function fermerSignal() {
+  const dialog = document.getElementById("signal");
+  if (dialog?.open) dialog.close();
+  unlockSheet();
+}
+
+function reportDepuisFormulaire() {
+  const texte = document.getElementById("signal-texte")?.value.trim() || "";
+  const base = signalCourant || brouillonSignal("");
+  return { ...base, text: texte };
+}
+
+function garderSignal(report) {
+  if (!report.text) return false;
+  const autres = lireSignaux().filter((item) => item.id !== report.id);
+  const ok = ecrireSignaux([report, ...autres]);
+  paintSignaux();
+  return ok;
+}
+
+async function fichierCapture(report) {
+  const src = srcCapture(report.shot);
+  if (!src) return null;
+  const reponse = await fetch(src);
+  const blob = await reponse.blob();
+  return new File([blob], `signalement-${idFichier(report.id)}.jpg`, { type: "image/jpeg" });
+}
+
+function telecharger(nom, contenu, type) {
+  const url = URL.createObjectURL(new Blob([contenu], { type }));
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = nom;
+  lien.click();
+  URL.revokeObjectURL(url);
+}
+
+async function partagerSignal(report) {
+  const texte = texteDebrief(report);
+  const fichier = await fichierCapture(report);
+  const fichiers = fichier ? [fichier] : [];
+  if (navigator.share && (!fichiers.length || !navigator.canShare || navigator.canShare({ files: fichiers }))) {
+    try {
+      await navigator.share({ title: "Signalement Aureum", text: texte, files: fichiers });
+      return "partage";
+    } catch (error) {
+      if (error?.name === "AbortError") return "annule";
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(texte);
+  } catch { /* Le téléchargement reste la copie de secours. */ }
+  telecharger(`signalement-${idFichier(report.id)}.md`, texte, "text/markdown");
+  if (fichier) telecharger(fichier.name, fichier, fichier.type);
+  return "fichier";
+}
+
+function bindSignal() {
+  document.getElementById("signaler")?.addEventListener("click", () => {
+    ouvrirSignal();
+  });
+  const dialog = document.getElementById("signal");
+  const form = document.getElementById("signal-form");
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const report = reportDepuisFormulaire();
+    if (!report.text) return;
+    const ok = garderSignal(report);
+    signalCourant = report;
+    const note = document.getElementById("signal-note");
+    if (note) {
+      note.textContent = ok
+        ? "Signalement gardé sur cet appareil. Partagez-le à Cursor pour un debrief."
+        : "Le navigateur refuse d'enregistrer davantage. Partagez celui-ci tout de suite.";
+    }
+  });
+  dialog?.addEventListener("click", async (event) => {
+    const bouton = event.target.closest("[data-signal]");
+    if (!bouton) return;
+    const action = bouton.dataset.signal;
+    if (action === "close") {
+      fermerSignal();
+      return;
+    }
+    if (action === "retirer") {
+      ecrireSignaux(lireSignaux().filter((item) => item.id !== bouton.dataset.id));
+      paintSignaux();
+      return;
+    }
+    if (action === "voir") {
+      const report = lireSignaux().find((item) => item.id === bouton.dataset.id);
+      if (!report) return;
+      montrerSignal(report, "Signalement rouvert. Vous pouvez le repartager à Cursor.");
+      const texte = document.getElementById("signal-texte");
+      if (texte) texte.value = report.text;
+      return;
+    }
+    if (action === "partager") {
+      const report = reportDepuisFormulaire();
+      if (!report.text) {
+        const note = document.getElementById("signal-note");
+        if (note) note.textContent = "Écrivez d'abord ce qui cloche.";
+        document.getElementById("signal-texte")?.focus();
+        return;
+      }
+      garderSignal(report);
+      signalCourant = report;
+      const suite = await partagerSignal(report);
+      const note = document.getElementById("signal-note");
+      if (!note) return;
+      if (suite === "partage") note.textContent = "Partage ouvert. Dans Cursor, mode Ask : collez le texte et la capture pour un debrief.";
+      else if (suite === "fichier") note.textContent = "Debrief téléchargé. Déposez le .md et la .jpg dans signalements/, ou joignez-les au chat Cursor en mode Ask.";
+    }
+  });
+  dialog?.addEventListener("close", () => {
+    unlockSheet();
+  });
+}
+
 function bind() {
   const form = document.getElementById("search-form");
   const input = document.getElementById("q");
@@ -4032,6 +4394,7 @@ function applyMarket(lang) {
 
 function boot() {
   bind();
+  bindSignal();
   registerServiceWorker();
   const fxReady = activeCurrency() !== "USD" || state.currency !== "EUR" ? loadFx() : Promise.resolve(null);
   const context = readContext();
