@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=59";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=60";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -131,6 +131,18 @@ function loadMarket() {
 }
 
 const savedMarket = loadMarket();
+
+const UNIVERS_KINDS = [
+  ["tous", "Tous"],
+  ["jeu", "Jeux"],
+  ["pack", "Packs"],
+  ["topps", "Topps"],
+  ["autocollant", "Autocollants"],
+  ["panini", "Panini"],
+  ["peluche", "Peluches"],
+  ["figurine", "Figurines"],
+  ["jouet", "Jouets"],
+];
 
 const state = {
   tab: "galerie",
@@ -1817,17 +1829,9 @@ async function loadSealed() {
   return sealedPromise;
 }
 
-const UNIVERS_KINDS = [
-  ["tous", "Tous"],
-  ["jeu", "Jeux"],
-  ["pack", "Packs"],
-  ["topps", "Topps"],
-  ["autocollant", "Autocollants"],
-  ["panini", "Panini"],
-  ["peluche", "Peluches"],
-  ["figurine", "Figurines"],
-  ["jouet", "Jouets"],
-];
+function universKind(value) {
+  return UNIVERS_KINDS.some(([id]) => id === value && id !== "tous") ? value : "";
+}
 
 function universLabel(kind) {
   return {
@@ -1840,6 +1844,12 @@ function universLabel(kind) {
     figurine: "Figurine",
     jouet: "Jouet",
   }[kind] || "Univers";
+}
+
+function pieceLabel(kind) {
+  if (boxKind(kind)) return sealedLabel(kind);
+  if (universKind(kind)) return universLabel(kind);
+  return "Pièce";
 }
 
 function releasedLabel(value) {
@@ -2068,6 +2078,13 @@ async function autrePhoto(id) {
       if (courante.startsWith("https://") && !rejected.includes(courante)) rejected.push(courante);
       state.photos[String(id)] = { url: trouve, rejected: rejected.slice(-12) };
       savePhotos();
+      const ligne = state.collection.items.find((row) => row.id === String(id) && universKind(row.box));
+      if (ligne && imagePiece(trouve)) {
+        ligne.image = trouve;
+        saveCollection();
+        const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(String(id)) : String(id);
+        document.querySelectorAll(`[data-card="${safe}"] img.shot`).forEach((img) => { img.src = trouve; });
+      }
       state.photoNote = "Photo changée sur ce compte.";
     }
   } catch {
@@ -2183,24 +2200,33 @@ function universHTML() {
     </section>`;
 }
 
+let universPromise = null;
+
 async function loadUnivers() {
-  if (state.univers || state.universLoading) return;
+  if (state.univers) return state.univers;
+  if (universPromise) return universPromise;
   state.universLoading = true;
   state.universError = "";
   if (state.tab === "univers") render();
-  try {
-    const response = await fetch("./univers.json");
-    if (!response.ok) throw new Error(String(response.status));
-    const data = await response.json();
-    state.univers = Array.isArray(data.products) ? data.products : [];
-    state.universAsOf = typeof data.asOf === "string" ? data.asOf : "";
-    state.universError = "";
-  } catch {
-    state.universError = "L'univers Pokémon n'a pas pu être chargé.";
-  } finally {
-    state.universLoading = false;
-    if (state.tab === "univers") render();
-  }
+  universPromise = (async () => {
+    try {
+      const response = await fetch("./univers.json");
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      state.univers = Array.isArray(data.products) ? data.products : [];
+      state.universAsOf = typeof data.asOf === "string" ? data.asOf : "";
+      state.universError = "";
+      return state.univers;
+    } catch {
+      state.universError = "L'univers Pokémon n'a pas pu être chargé.";
+      return null;
+    } finally {
+      state.universLoading = false;
+      universPromise = null;
+      if (state.tab === "univers") render();
+    }
+  })();
+  return universPromise;
 }
 
 
@@ -3160,6 +3186,13 @@ function looseNote(value) {
   return String(value || "").replace(/[\u0000-\u001F]/g, "").slice(0, NOTE_MAX);
 }
 
+function imagePiece(url) {
+  if (typeof url !== "string") return "";
+  if (url.startsWith("https://archives.bulbagarden.net/")) return url;
+  if (/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(url)) return url;
+  return "";
+}
+
 function loadCollection() {
   try {
     const raw = lireCabinet("collection") || {};
@@ -3169,22 +3202,27 @@ function loadCollection() {
       named: raw.named !== false,
       shareFavs: raw.shareFavs === true,
       items: items.filter((item) => item && cleanId(item.id, "") && item.name).slice(0, COLL_MAX).flatMap((item) => {
-        const box = boxKind(item.box);
-        if (box && !/^\d+$/.test(item.id)) return [];
+        const sealed = boxKind(item.box);
+        const univers = universKind(item.box);
+        if (item.box && !sealed && !univers) return [];
+        if (sealed && !/^\d+$/.test(item.id)) return [];
+        const piece = sealed || univers;
         const row = {
           id: item.id,
-          name: looseNote(item.name).trim() || (box ? sealedLabel(box) : "Carte"),
-          image: box
+          name: looseNote(item.name).trim() || (piece ? pieceLabel(piece) : "Carte"),
+          image: sealed
             ? boxShot(item.id)
-            : (typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : ""),
+            : (univers
+              ? (imagePiece(item.image) || (/^\d+$/.test(item.id) ? boxShot(item.id) : ""))
+              : (typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : "")),
           setName: looseNote(item.setName).trim(),
-          localId: box ? "" : looseNote(item.localId).trim().slice(0, 16),
+          localId: piece ? "" : looseNote(item.localId).trim().slice(0, 16),
           note: looseNote(item.note).trim(),
-          trend: box || typeof item.trend !== "number" || item.trend < 0 ? null : item.trend,
-          lang: box ? "fr" : (MARKETS[item.lang] ? item.lang : "fr"),
+          trend: piece || typeof item.trend !== "number" || item.trend < 0 ? null : item.trend,
+          lang: piece ? "fr" : (MARKETS[item.lang] ? item.lang : "fr"),
         };
-        if (box) {
-          row.box = box;
+        if (piece) {
+          row.box = piece;
           row.usd = typeof item.usd === "number" && item.usd >= 0 ? item.usd : null;
         }
         return [row];
@@ -3249,6 +3287,32 @@ function addBox(item) {
   if (!/^\d+$/.test(id) || !boxKind(item?.kind)) return;
   if (inCollection(id) || state.collection.items.length >= COLL_MAX) return;
   state.collection.items.unshift(collectionFromBox(item));
+  saveCollection();
+}
+
+function collectionFromUnivers(item, note = "") {
+  const id = String(item.id);
+  const kind = universKind(item.kind || item.box);
+  const montant = universMontant(item);
+  return {
+    id,
+    name: looseNote(item.name).trim() || universLabel(kind),
+    image: imagePiece(universSrc(item)),
+    setName: looseNote(item.set || item.setName || "").trim(),
+    localId: "",
+    note: looseNote(note).trim(),
+    lang: "fr",
+    trend: null,
+    box: kind,
+    usd: typeof montant === "number" && montant >= 0 ? montant : null,
+  };
+}
+
+function addUnivers(item) {
+  const id = cleanId(String(item?.id ?? ""), "");
+  if (!id || !universKind(item?.kind)) return;
+  if (inCollection(id) || state.collection.items.length >= COLL_MAX) return;
+  state.collection.items.unshift(collectionFromUnivers({ ...item, id }));
   saveCollection();
 }
 
@@ -3317,23 +3381,26 @@ function sanitizeRows(rows, withNote) {
     const id = cleanId(row?.i, "");
     const name = looseNote(row?.a).trim();
     if (!id || !name) return [];
-    const box = boxKind(row?.k);
-    if (box && !/^\d+$/.test(id)) return [];
+    const sealed = boxKind(row?.k);
+    const univers = universKind(row?.k);
+    if (row?.k && !sealed && !univers) return [];
+    if (sealed && !/^\d+$/.test(id)) return [];
+    const piece = sealed || univers;
     const usd = typeof row?.u === "number" && Number.isFinite(row.u) && row.u >= 0 && row.u < 1e7
       ? Math.round(row.u * 100) / 100
       : null;
     const item = {
       id,
       name,
-      image: box ? boxShot(id) : "",
+      image: sealed ? boxShot(id) : (univers && /^\d+$/.test(id) ? boxShot(id) : ""),
       setName: looseNote(row?.s).trim(),
-      localId: box ? "" : looseNote(row?.l).trim().slice(0, 16),
+      localId: piece ? "" : looseNote(row?.l).trim().slice(0, 16),
       note: withNote ? looseNote(row?.c).trim() : "",
-      lang: box ? "fr" : (MARKETS[row?.g] ? row.g : "fr"),
+      lang: piece ? "fr" : (MARKETS[row?.g] ? row.g : "fr"),
       trend: null,
     };
-    if (box) {
-      item.box = box;
+    if (piece) {
+      item.box = piece;
       item.usd = usd;
     }
     return [item];
@@ -3364,9 +3431,15 @@ async function decodeShare(token) {
 }
 
 function collBox(item, editable) {
-  const bits = [sealedLabel(item.box)];
+  const label = pieceLabel(item.box);
+  const family = universKind(item.box) ? "univers" : "sealed";
+  const bits = [label];
   if (item.setName) bits.push(item.setName);
   const price = boxPriceHTML(item.usd);
+  const src = item.image || (family === "sealed" || /^\d+$/.test(item.id) ? boxShot(item.id) : "");
+  const art = src
+    ? `<img class="shot" src="${esc(src)}" alt="${esc(item.name)}" decoding="async">`
+    : `<span class="monogram">${esc(initials(item.name))}</span>`;
   const note = editable
     ? `<label class="coll-label">Commentaire
         <textarea data-coll-note="${esc(item.id)}" data-lang="fr" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement.">${esc(item.note || "")}</textarea>
@@ -3375,13 +3448,11 @@ function collBox(item, editable) {
     : (item.note ? `<p class="coll-note">${esc(item.note)}</p>` : "");
   return `
     <article class="coll-card" data-card="${esc(item.id)}" data-box="${esc(item.box)}">
-      <button class="coll-open" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
-        <span class="art is-box" data-label="${esc(sealedLabel(item.box))}">
-          <img class="shot" src="${esc(item.image || boxShot(item.id))}" alt="${esc(item.name)}" decoding="async">
-        </span>
+      <button class="coll-open" type="button" data-action="product" data-family="${family}" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
+        <span class="art is-box" data-label="${esc(label)}">${art}</span>
       </button>
       <div class="coll-body">
-        <button class="coll-title" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">${esc(item.name)}</button>
+        <button class="coll-title" type="button" data-action="product" data-family="${family}" data-id="${esc(item.id)}">${esc(item.name)}</button>
         <p class="tile-meta">${esc(bits.join(" · "))}</p>
         <p class="price-line">${price}</p>
         ${note}
@@ -3498,15 +3569,29 @@ function collectionWorth() {
 
 function worthNote(worth) {
   const { cards, boxes, boxKnown, pending } = worth;
+  const hasUnivers = state.collection.items.some((item) => universKind(item.box));
+  const hasSealed = state.collection.items.some((item) => boxKind(item.box));
   if (!boxes) return "Somme des cotes Cardmarket, en euros. Chaque carte compte une fois. Pas un prix de vente.";
-  if (!cards) {
-    if (pending) return "Cotes TCGPlayer en dollars. Conversion en cours. Pas une cote Cardmarket. Pas un prix de vente.";
-    if (!boxKnown) return "Cotes TCGPlayer en dollars. La conversion est indisponible. Pas une cote Cardmarket. Pas un prix de vente.";
-    return "Somme des cotes TCGPlayer, en euros après conversion. Chaque coffret compte une fois. Pas une cote Cardmarket. Pas un prix de vente.";
+  if (!hasUnivers) {
+    if (!cards) {
+      if (pending) return "Cotes TCGPlayer en dollars. Conversion en cours. Pas une cote Cardmarket. Pas un prix de vente.";
+      if (!boxKnown) return "Cotes TCGPlayer en dollars. La conversion est indisponible. Pas une cote Cardmarket. Pas un prix de vente.";
+      return "Somme des cotes TCGPlayer, en euros après conversion. Chaque coffret compte une fois. Pas une cote Cardmarket. Pas un prix de vente.";
+    }
+    if (pending && !boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+    if (!boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+    return "Les cartes sont en cotes Cardmarket. Les ETB, coffrets et UPC sont en cotes TCGPlayer, converties en euros. Chaque pièce compte une fois. Pas un prix de vente.";
   }
-  if (pending && !boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
-  if (!boxKnown) return "Les cartes sont en cotes Cardmarket. La conversion des coffrets est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
-  return "Les cartes sont en cotes Cardmarket. Les ETB, coffrets et UPC sont en cotes TCGPlayer, converties en euros. Chaque pièce compte une fois. Pas un prix de vente.";
+  const anyUsd = state.collection.items.some((item) => item.box && typeof item.usd === "number");
+  if (!cards && !hasSealed) {
+    if (pending) return "Prix en dollars. Conversion en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+    if (!anyUsd) return "Pas de cote pour ces pièces. Chaque pièce compte une fois. Pas un prix de vente.";
+    if (!boxKnown) return "Prix en dollars. La conversion est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+    return "Somme des prix en euros après conversion. Chaque pièce compte une fois. Pas un prix de vente.";
+  }
+  if (pending && !boxKnown) return "Les cartes restent en cotes Cardmarket. La conversion du reste est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
+  if (anyUsd && !boxKnown) return "Les cartes restent en cotes Cardmarket. La conversion du reste est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
+  return "Les cartes restent en cotes Cardmarket. Le reste est converti depuis les dollars. Chaque pièce compte une fois. Pas un prix de vente.";
 }
 
 function worthHTML() {
@@ -3556,7 +3641,15 @@ function paintCollectionPrices() {
     const titre = node.querySelector(".coll-title");
     if (titre) titre.textContent = item.name;
     const meta = node.querySelector(".tile-meta");
-    if (meta) meta.textContent = [sealedLabel(item.box), item.setName].filter(Boolean).join(" · ");
+    if (meta) meta.textContent = [pieceLabel(item.box), item.setName].filter(Boolean).join(" · ");
+    const art = node.querySelector(".art");
+    if (art && universKind(item.box)) {
+      const src = item.image || "";
+      const img = art.querySelector("img.shot");
+      if (src && img) img.src = src;
+      else if (src) art.innerHTML = `<img class="shot" src="${esc(src)}" alt="" decoding="async">`;
+      else if (img) art.innerHTML = `<span class="monogram">${esc(initials(item.name))}</span>`;
+    }
   });
 }
 
@@ -3568,19 +3661,36 @@ function collectionHasBox() {
 async function refreshCollection() {
   if (state.visit || state.tab !== "collection" || !state.collection.items.length) return;
   const token = ++collEpoch;
-  const boxes = state.collection.items.filter((item) => item.box);
+  const pieces = state.collection.items.filter((item) => item.box);
+  const sealed = pieces.filter((item) => boxKind(item.box));
+  const univers = pieces.filter((item) => universKind(item.box));
   const cards = state.collection.items.filter((item) => !item.box);
-  if (boxes.length) {
-    await Promise.all([loadSealed(), loadFx()]);
+  if (pieces.length) {
+    const jobs = [];
+    if (sealed.length) jobs.push(loadSealed());
+    if (univers.length) jobs.push(loadUnivers());
+    jobs.push(loadFx());
+    await Promise.all(jobs);
     if (token !== collEpoch || state.visit || state.tab !== "collection") return;
-    boxes.forEach((item) => {
-      const row = (state.sealed || []).find((sealed) => String(sealed.id) === item.id);
+    sealed.forEach((item) => {
+      const row = (state.sealed || []).find((entry) => String(entry.id) === item.id);
       if (!row) return;
       if (boxKind(row.kind)) item.box = row.kind;
       item.usd = typeof row.usd === "number" && row.usd >= 0 ? row.usd : null;
       if (row.name) item.name = looseNote(row.name).trim() || item.name;
       if (row.set) item.setName = looseNote(row.set).trim();
       item.image = boxShot(item.id);
+    });
+    univers.forEach((item) => {
+      const row = (state.univers || []).find((entry) => String(entry.id) === item.id);
+      if (!row) return;
+      if (universKind(row.kind)) item.box = row.kind;
+      const montant = universMontant(row);
+      item.usd = typeof montant === "number" && montant >= 0 ? montant : null;
+      if (row.name) item.name = looseNote(row.name).trim() || item.name;
+      if (row.set) item.setName = looseNote(row.set).trim();
+      const src = imagePiece(universSrc(row));
+      if (src) item.image = src;
     });
   }
   await pool(cards, 4, async (item) => {
@@ -3605,7 +3715,7 @@ function collectionHTML() {
   const mine = state.collection;
   const empty = mine.items.length
     ? ""
-    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Depuis une fiche, ajoute une carte, une ETB, un coffret ou une UPC.</p></div>`;
+    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Depuis une fiche, ajoute une carte, un jeu, une peluche ou un coffret.</p></div>`;
   return `
     <section class="panel">
       <header class="section-head">
@@ -3613,7 +3723,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Tes cartes, tes ETB, tes coffrets et tes UPC. Un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
+        <p class="lede">Tes cartes, tes jeux, tes peluches et tes coffrets. Un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -3633,7 +3743,24 @@ function collectionHTML() {
 async function hydrateVisit() {
   if (!state.visit || state.visit.error || state.tab !== "collection") return;
   const token = ++visitEpoch;
-  const rows = [...(state.visit.items || []), ...(state.visit.favs || [])].filter((row) => !row.box);
+  const all = [...(state.visit.items || []), ...(state.visit.favs || [])];
+  const univers = all.filter((row) => universKind(row.box));
+  if (univers.length) {
+    await Promise.all([loadUnivers(), loadFx()]);
+    if (token !== visitEpoch || state.tab !== "collection" || !state.visit) return;
+    univers.forEach((row) => {
+      const item = (state.univers || []).find((entry) => String(entry.id) === row.id);
+      if (!item) return;
+      const src = imagePiece(universSrc(item));
+      if (src) row.image = src;
+      const montant = universMontant(item);
+      if (typeof montant === "number" && montant >= 0) row.usd = montant;
+      if (item.name) row.name = looseNote(item.name).trim() || row.name;
+      if (item.set) row.setName = looseNote(item.set).trim();
+    });
+    paintCollectionPrices();
+  }
+  const rows = all.filter((row) => !row.box);
   await pool(rows, 4, async (row) => {
     try {
       const full = await getCard(row.id, row.lang || "fr");
@@ -3660,7 +3787,7 @@ async function copyCollectionLink() {
   const status = document.getElementById("coll-status");
   const payload = sharePayload();
   if (!payload) {
-    state.shareNote = "Ajoute une carte ou un coffret avant de copier le lien.";
+    state.shareNote = "Ajoute une pièce avant de copier le lien.";
     if (status) status.textContent = state.shareNote;
     return;
   }
@@ -4323,11 +4450,16 @@ function productHTML(item, family) {
     ? tcgplayerNote(when)
     : (family === "univers" ? venteNote(item) : "Pas de cote unitaire pour cette ligne.");
   const cherche = state.photoBusy === String(item.id);
+  const deja = inCollection(String(item.id));
+  const plein = !deja && state.collection.items.length >= COLL_MAX;
+  const collLabel = deja ? "Retirer de ma collection" : plein ? "Collection pleine" : "Ajouter à ma collection";
+  const collBtn = `<button class="btn" type="button" data-action="coll-add" data-family="${family}" data-id="${esc(item.id)}" ${plein ? "disabled" : ""}>${collLabel}</button>`;
   const photoBtn = family === "univers" ? `
         <div class="fiche-actions">
           <button class="btn" type="button" data-action="autre-photo" data-id="${esc(item.id)}" ${cherche ? "disabled" : ""}>${cherche ? "Recherche…" : (shot ? "Autre photo" : "Chercher une photo")}</button>
+          ${collBtn}
         </div>
-        ${state.photoNote && productOpen?.id === String(item.id) ? `<p class="note">${esc(state.photoNote)}</p>` : ""}` : "";
+        ${state.photoNote && productOpen?.id === String(item.id) ? `<p class="note">${esc(state.photoNote)}</p>` : ""}` : `<div class="fiche-actions">${collBtn}</div>`;
   return `
     <article class="fiche">
       ${ficheBar()}
@@ -4340,9 +4472,6 @@ function productHTML(item, family) {
         ${typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : ""}
         <p class="note">${esc(note)}</p>
         ${photoBtn}
-        ${family === "sealed" ? `<div class="fiche-actions">
-          <button class="btn" type="button" data-action="coll-add" data-family="sealed" data-id="${esc(item.id)}" ${!inCollection(String(item.id)) && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${inCollection(String(item.id)) ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
-        </div>` : ""}
       </div>
     </article>`;
 }
@@ -4360,13 +4489,13 @@ function openProduct(item, family) {
   if (!dialog.open) dialog.showModal();
 }
 
-function coffretIntrouvable() {
+function produitIntrouvable(message) {
   productOpen = null;
   const dialog = document.getElementById("fiche");
   keepFiche();
   dialog.dataset.mode = "";
   dialog.dataset.current = "";
-  dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>Ce coffret n'est plus dans le catalogue.</p></div>`;
+  dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>${esc(message)}</p></div>`;
   dialog.removeAttribute("aria-busy");
   lockSheet();
   if (!dialog.open) dialog.showModal();
@@ -4492,7 +4621,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=59", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=60", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5246,10 +5375,15 @@ function bind() {
         const list = family === "univers" ? state.univers : state.sealed;
         const item = (list || []).find((row) => String(row.id) === id);
         if (item) openProduct(item, family);
-        else if (family === "sealed") loadSealed().then(() => {
+        else if (family === "univers") loadUnivers().then(() => {
+          const found = (state.univers || []).find((row) => String(row.id) === id);
+          if (found) openProduct(found, "univers");
+          else produitIntrouvable("Cette pièce n'est plus dans le catalogue.");
+        });
+        else loadSealed().then(() => {
           const found = (state.sealed || []).find((row) => String(row.id) === id);
           if (found) openProduct(found, "sealed");
-          else coffretIntrouvable();
+          else produitIntrouvable("Ce coffret n'est plus dans le catalogue.");
         });
       }
       if (action === "autre-photo") autrePhoto(actionEl.dataset.id);
@@ -5290,13 +5424,20 @@ function bind() {
           actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
           if (state.tab === "collection" && !state.visit) render();
         };
-        if (actionEl.dataset.family === "sealed") {
+        if (actionEl.dataset.family === "sealed" || actionEl.dataset.family === "univers") {
           const id = String(actionEl.dataset.id || "");
-          const item = (state.sealed || []).find((row) => String(row.id) === id);
-          if (inCollection(id)) removeFromCollection(id);
-          else if (item) addBox(item);
-          finish(id, "fr");
-          if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
+          const univers = actionEl.dataset.family === "univers";
+          const appliquer = (item) => {
+            if (inCollection(id)) removeFromCollection(id);
+            else if (univers) addUnivers(item);
+            else if (item) addBox(item);
+            finish(id, "fr");
+            if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
+          };
+          const list = univers ? state.univers : state.sealed;
+          const item = (list || []).find((row) => String(row.id) === id);
+          if (item || inCollection(id) || !univers) appliquer(item);
+          else loadUnivers().then(() => appliquer((state.univers || []).find((row) => String(row.id) === id)));
         } else {
           const id = actionEl.dataset.id;
           const lang = actionEl.dataset.lang || state.market;
