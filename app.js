@@ -11,6 +11,13 @@ const POCKETS = 9;
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
 const ICONIC_IDS = ["swsh7-215", "base1-4", "base1-2", "base1-15", "base1-10", "base1-6", "sv03.5-205", "base1-58"];
+const HALL_IDS = [
+  "swsh7-215", "neo4-107", "swsh7-218", "neo4-106", "neo4-109", "neo4-113",
+  "base1-4", "sm115-9", "sv04.5-234", "swsh7-205", "swsh7-212", "swsh7-209",
+  "me01-188", "base1-2", "base1-15", "xy12-11",
+];
+const DEAR_EUR = 200;
+const INVITE_KEY = "aureum.invite";
 const SERIES_ORDER = ["me", "sv", "swsh", "sm", "xy", "bw", "hgss", "dp", "pl", "col", "pop", "ex", "neo", "ecard", "base", "tcgp", "mc", "tk", "misc"];
 
 const TYPE_COLOR = {
@@ -42,6 +49,7 @@ let epoch = 0;
 let favEpoch = 0;
 let visitEpoch = 0;
 let collEpoch = 0;
+let hallEpoch = 0;
 let quoteToken = 0;
 let searchTimer = 0;
 const motionOK = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -69,6 +77,14 @@ const state = {
   collection: loadCollection(),
   visit: null,
   shareNote: "",
+  ownCode: loadOwnInvite(),
+  guestInvite: null,
+  inviteNote: "",
+  hallCards: [],
+  hallOrder: [],
+  hallLoading: false,
+  hallFailed: false,
+  coteMode: "tendance",
   binder: loadBinder(),
   binderSlot: null,
   binderQuery: "",
@@ -768,12 +784,12 @@ function skeletonRanks(count) {
   return Array.from({ length: count }, () => `<div class="skel skel-rank"></div>`).join("");
 }
 
-function rankList(cards) {
+function rankList(cards, start = 0) {
   if (!cards.length) return `<p class="empty">Aucune cote pour le moment.</p>`;
   return `<ol class="ranks">${cards.map((card, index) => `
     <li>
       <button type="button" data-open="${esc(card.id)}" data-card="${esc(card.id)}">
-        <span class="rank">${String(index + 1).padStart(2, "0")}</span>
+        <span class="rank">${String(start + index + 1).padStart(2, "0")}</span>
         <span class="rank-art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
         <span class="rank-copy">
           <span class="rank-name">${esc(prettyName(card.name))}</span>
@@ -811,7 +827,135 @@ function quoteHTML() {
     ${quote.rows.length ? rankList(quote.rows) : ""}`;
 }
 
+function loadOwnInvite() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(INVITE_KEY) || "{}");
+    if (raw && /^[A-Z0-9]{6}$/.test(raw.code)) return raw.code;
+  } catch {
+    /* Un nouveau code est créé plus bas. */
+  }
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(6);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  let code = "";
+  for (const value of bytes) code += alphabet[value % alphabet.length];
+  localStorage.setItem(INVITE_KEY, JSON.stringify({ code }));
+  return code;
+}
+
+function shuffleIds(ids) {
+  const copy = ids.slice();
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const swap = copy[i];
+    copy[i] = copy[j];
+    copy[j] = swap;
+  }
+  return copy;
+}
+
+function orderedHall() {
+  const cards = state.hallCards.slice();
+  if (state.coteMode === "melange") {
+    const order = new Map(state.hallOrder.map((id, index) => [id, index]));
+    cards.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+    return cards;
+  }
+  cards.sort((a, b) => trendOf(b) - trendOf(a));
+  return cards;
+}
+
+function dearLine(card) {
+  const trend = card?.pricing?.cardmarket?.trend;
+  if (typeof trend !== "number" || trend < DEAR_EUR) return "";
+  return `<p class="cote-wow">Elle coûte cher.</p>`;
+}
+
+function coteHero(card) {
+  const trend = card.pricing?.cardmarket?.trend;
+  return `
+    <article class="cote-hero${typeof trend === "number" && trend >= DEAR_EUR ? " is-dear" : ""}">
+      <button class="cote-open" type="button" data-open="${esc(card.id)}" aria-label="${esc(prettyName(card.name))}">
+        <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", true)}</span>
+      </button>
+      <div>
+        ${dearLine(card)}
+        <p class="cote-price">${typeof trend === "number" ? esc(eur(trend)) : ""}</p>
+        <h3 class="cote-name">${esc(prettyName(card.name))}</h3>
+        <p class="tile-meta">${esc(metaLine(card))}</p>
+        <p class="note">Tendance Cardmarket. Pas une offre.</p>
+      </div>
+    </article>`;
+}
+
+function inviteBox() {
+  const guest = state.guestInvite;
+  const banner = guest
+    ? `<p class="banner">${guest.name ? `${esc(guest.name)} t'ouvre la salle des cotes.` : "Un ami t'ouvre la salle des cotes."}</p>`
+    : "";
+  return `
+    ${banner}
+    <div class="invite-box">
+      <p class="kicker">Code pour un ami</p>
+      <p class="invite-code">${esc(state.ownCode)}</p>
+      <button class="btn" type="button" data-action="invite-copy">Copier le lien</button>
+      <p class="note" id="invite-status">${esc(state.inviteNote)}</p>
+      <p class="note">Le lien ouvre cette salle chez lui. Pas de compte, pas d'argent.</p>
+    </div>`;
+}
+
+async function loadHall() {
+  if (state.hallLoading || state.hallCards.length) return;
+  state.hallLoading = true;
+  const token = ++hallEpoch;
+  const rows = [];
+  await pool(HALL_IDS, 4, async (id) => {
+    try {
+      const card = await getCard(id);
+      if (token !== hallEpoch) return;
+      if (typeof card?.pricing?.cardmarket?.trend === "number") rows.push(card);
+    } catch {
+      /* Une carte manquante ne bloque pas la salle. */
+    }
+  });
+  if (token !== hallEpoch) return;
+  state.hallCards = rows;
+  state.hallOrder = shuffleIds(rows.map((card) => card.id));
+  state.hallFailed = rows.length === 0;
+  state.hallLoading = false;
+  if (state.tab === "cotes") render();
+}
+
+async function copyInviteLink() {
+  const status = document.getElementById("invite-status");
+  const url = new URL(location.href);
+  url.search = "";
+  url.searchParams.set("invite", state.ownCode);
+  const name = state.collection.named ? looseName(state.collection.name).trim() : "";
+  if (name) url.searchParams.set("ami", name);
+  url.hash = "cotes";
+  const link = url.toString();
+  try {
+    await navigator.clipboard.writeText(link);
+    state.inviteNote = "Lien copié.";
+  } catch {
+    state.inviteNote = link;
+  }
+  if (status) status.textContent = state.inviteNote;
+}
+
 function cotesHTML() {
+  const cards = orderedHall();
+  const hero = cards[0] ? coteHero(cards[0]) : "";
+  const rest = cards.length > 1 ? rankList(cards.slice(1), 1) : "";
+  const pending = !cards.length && !state.hallFailed;
+  const body = pending
+    ? `<p class="note">Lecture des cotes, de 1999 à aujourd'hui…</p>${skeletonRanks(4)}`
+    : cards.length
+      ? `${hero}${rest}`
+      : `<p class="note">Les cotes ne répondent pas. Rouvre la salle dans un instant.</p>`;
+  const mode = (id, label) => `<button class="fav-sort-btn" type="button" data-action="cote-mode" data-mode="${id}" aria-pressed="${state.coteMode === id ? "true" : "false"}">${label}</button>`;
   const setName = prettyName(state.setDetail?.name || "l'extension");
   const running = Boolean(state.quote?.running);
   const label = running
@@ -826,9 +970,15 @@ function cotesHTML() {
           <p class="kicker">Référence</p>
           <h2>Salle des cotes.</h2>
         </div>
-        <p class="lede">Huit cartes de référence, classées par tendance Cardmarket.</p>
+        <p class="lede">Les plus fortes tendances Cardmarket, de 1999 à aujourd'hui. Le mélange reprend les mêmes cartes, dans un autre ordre.</p>
       </header>
-      <div id="hall">${hallHTML()}</div>
+      ${inviteBox()}
+      <div class="fav-sort" role="group" aria-label="Ordre de la salle">
+        ${mode("tendance", "Par tendance")}
+        ${mode("melange", "Toutes les années")}
+        ${state.coteMode === "melange" ? `<button class="fav-sort-btn" type="button" data-action="cote-shuffle">Mélanger encore</button>` : ""}
+      </div>
+      <div id="cote-hall">${body}</div>
     </section>
     <section class="panel">
       <header class="section-head">
@@ -1120,13 +1270,25 @@ const UNIVERS_KINDS = [
   ["tous", "Tous"],
   ["jeu", "Jeux"],
   ["pack", "Packs"],
+  ["topps", "Topps"],
+  ["autocollant", "Autocollants"],
+  ["panini", "Panini"],
   ["peluche", "Peluches"],
   ["figurine", "Figurines"],
   ["jouet", "Jouets"],
 ];
 
 function universLabel(kind) {
-  return { jeu: "Jeu", pack: "Pack", peluche: "Peluche", figurine: "Figurine", jouet: "Jouet" }[kind] || "Univers";
+  return {
+    jeu: "Jeu",
+    pack: "Pack",
+    topps: "Topps",
+    autocollant: "Autocollant",
+    panini: "Panini",
+    peluche: "Peluche",
+    figurine: "Figurine",
+    jouet: "Jouet",
+  }[kind] || "Univers";
 }
 
 function releasedLabel(value) {
@@ -1218,7 +1380,10 @@ function universHTML() {
         <p class="note">${note}</p>
       </section>`;
   }
-  const counts = { tous: state.univers.length, jeu: 0, pack: 0, peluche: 0, figurine: 0, jouet: 0 };
+  const counts = { tous: state.univers.length };
+  UNIVERS_KINDS.forEach(([id]) => {
+    if (id !== "tous") counts[id] = 0;
+  });
   state.univers.forEach((item) => {
     if (counts[item.kind] != null) counts[item.kind] += 1;
   });
@@ -1233,7 +1398,7 @@ function universHTML() {
         </div>
         <p class="lede" id="univers-status">${esc(universStatus())}</p>
       </header>
-      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines et jouets sont les grandes gammes, pas chaque modèle.</p>
+      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle.</p>
       <div class="sealed-bar">
         <div class="series-row" role="group" aria-label="Famille">${filters}</div>
         <div class="sealed-tools">
@@ -1993,6 +2158,7 @@ function setTab(tab) {
   }
   if (tab === "etb") loadSealed();
   if (tab === "univers") loadUnivers();
+  if (tab === "cotes") loadHall();
 }
 
 async function loadIconics() {
@@ -2699,6 +2865,19 @@ function bind() {
       }
       if (action === "coll-share") copyCollectionLink();
       if (action === "coll-mine") leaveVisit();
+      if (action === "cote-mode") {
+        state.coteMode = actionEl.dataset.mode === "melange" ? "melange" : "tendance";
+        if (state.coteMode === "melange" && !state.hallOrder.length) {
+          state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
+        }
+        render();
+      }
+      if (action === "cote-shuffle") {
+        state.coteMode = "melange";
+        state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
+        render();
+      }
+      if (action === "invite-copy") copyInviteLink();
       if (action === "fav-sort") {
         state.favSort = actionEl.dataset.sort || "ajout";
         render();
@@ -2850,7 +3029,12 @@ function boot() {
   state.gallerySeriesId = context.seriesId;
   state.setId = context.setId;
   state.browseSeriesId = context.seriesId;
-  const token = new URLSearchParams(location.search).get("voir");
+  const params = new URLSearchParams(location.search);
+  const inviteCode = params.get("invite") || "";
+  state.guestInvite = /^[A-Z0-9]{6}$/.test(inviteCode)
+    ? { code: inviteCode, name: looseName(params.get("ami") || "").trim() }
+    : null;
+  const token = params.get("voir");
   const openVisit = token
     ? decodeShare(token).then((visit) => {
       state.visit = visit || { error: true };
@@ -2859,7 +3043,13 @@ function boot() {
     })
     : Promise.resolve();
   openVisit.then(() => {
-    rememberTab(state.visit ? "collection" : initialTab());
+    const hashed = location.hash.replace("#", "");
+    const tab = state.visit
+      ? "collection"
+      : state.guestInvite && (!hashed || hashed === "cotes")
+        ? "cotes"
+        : initialTab();
+    rememberTab(tab);
     render();
     if (state.tab === "etb") loadSealed();
     if (state.tab === "univers") loadUnivers();
@@ -2869,6 +3059,7 @@ function boot() {
       hydrateVisit();
       refreshCollection();
     }
+    if (state.tab === "cotes") loadHall();
     fetchJSON("/series")
       .then((list) => {
         state.series = Array.isArray(list) ? list : [];
