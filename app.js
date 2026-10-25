@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=58";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=59";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -186,6 +186,9 @@ const state = {
   universSort: "ancien",
   universQuery: "",
   universPage: 1,
+  photos: loadPhotos(),
+  photoBusy: "",
+  photoNote: "",
   market: savedMarket.market,
   currency: savedMarket.currency,
 };
@@ -1857,7 +1860,13 @@ function universRows() {
   const copy = rows.slice();
   const key = (item) => item.released || "9999";
   if (state.universSort === "nom") copy.sort((a, b) => a.name.localeCompare(b.name, "fr"));
-  else if (state.universSort === "cote") copy.sort((a, b) => (b.usd ?? -1) - (a.usd ?? -1));
+  else if (state.universSort === "cote") {
+    const montant = (item) => {
+      const value = universMontant(item);
+      return typeof value === "number" ? value : -1;
+    };
+    copy.sort((a, b) => montant(b) - montant(a) || a.name.localeCompare(b.name, "fr"));
+  }
   else if (state.universSort === "recent") copy.sort((a, b) => key(b).localeCompare(key(a)) || a.name.localeCompare(b.name, "fr"));
   else copy.sort((a, b) => key(a).localeCompare(key(b)) || a.name.localeCompare(b.name, "fr"));
   return copy;
@@ -1877,13 +1886,199 @@ function universStatus() {
   } else if (mode === "unavailable") {
     boosters = "Les boosters sont cotés en dollars TCGPlayer. La conversion est indisponible.";
   }
-  return `${shown} sur ${total}. ${boosters} Le reste est recensé sans cote unitaire.`;
+  return `${shown} sur ${total}. ${boosters} Sans cote TCGPlayer, le prix d'un exemplaire complet s'affiche quand les ventes terminées le donnent, avec la date du relevé.`;
+}
+
+function universMontant(item) {
+  if (typeof item?.usd === "number") return item.usd;
+  if (typeof item?.sale?.usd === "number") return item.sale.usd;
+  return null;
+}
+
+function venteNote(item) {
+  const sale = item?.sale;
+  if (!sale || typeof sale.usd !== "number") return "Pas de cote unitaire pour cette ligne.";
+  const when = formatDay(sale.at ? `${sale.at}T12:00:00` : "");
+  const grade = sale.kind === "neuf"
+    ? "exemplaire neuf"
+    : sale.kind === "sans-boite"
+      ? "exemplaire sans boîte"
+      : "exemplaire complet";
+  const date = when ? ` Vérifiée le ${when}.` : "";
+  const mode = usdDisplayMode();
+  let change = "";
+  if (mode === "pending") change = " Conversion en cours.";
+  else if (mode === "unavailable") change = " La conversion est indisponible.";
+  else if (mode === "converted") change = activeCurrency() === "JPY" ? " Affiché en yens." : " Affiché en euros.";
+  return `Prix d'un ${grade}, d'après les ventes terminées.${date}${change} Pas une offre.`;
+}
+
+function loadPhotos() {
+  try {
+    const raw = lireCabinet("photos");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    Object.entries(raw).forEach(([id, value]) => {
+      if (!cleanId(id, "") || !value || typeof value !== "object") return;
+      const url = typeof value.url === "string" && value.url.startsWith("https://archives.bulbagarden.net/") ? value.url : "";
+      const rejected = Array.isArray(value.rejected)
+        ? value.rejected.filter((row) => typeof row === "string" && row.startsWith("https://")).slice(-12)
+        : [];
+      if (url || rejected.length) out[id] = { url, rejected };
+    });
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function savePhotos() {
+  noterStockage(ecrireCabinet("photos", state.photos));
+}
+
+function nomFichier(url) {
+  try {
+    const file = decodeURIComponent(new URL(url).pathname).split("/").pop() || "";
+    return file.replace(/^\d+px-/i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function photoChoisie(id) {
+  const row = state.photos?.[String(id)];
+  return row && typeof row.url === "string" && row.url.startsWith("https://archives.bulbagarden.net/") ? row.url : "";
 }
 
 function universSrc(item) {
+  const choisi = photoChoisie(item?.id);
+  if (choisi) return choisi;
   if (typeof item?.image === "string" && item.image.startsWith("https://")) return item.image;
   if (/^\d+$/.test(String(item?.id))) return `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_400x400.jpg`;
   return "";
+}
+
+function normPhoto(value) {
+  return String(value || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function pageUtile(title, query) {
+  const page = normPhoto(title);
+  const asked = normPhoto(query);
+  const extras = page.match(/\b\d+\b/g) || [];
+  const wanted = new Set(asked.match(/\b\d+\b/g) || []);
+  if (extras.some((num) => !wanted.has(num))) return false;
+  if (/logo|icon|symbol|flag/.test(page)) return false;
+  const tokens = asked.split(" ").filter((token) => token.length >= 5);
+  if (!tokens.length) return false;
+  const hits = tokens.filter((token) => page.includes(token)).length;
+  return hits >= 1 && hits >= Math.ceil(tokens.length / 3);
+}
+
+function fichierUtile(name) {
+  const file = String(name || "").toLowerCase();
+  if (/\.(svg|gif|pdf)$/.test(file)) return false;
+  if (/logo|icon|flag|symbol|stub|sprite|^spr|title|wordmark|button|favicon/.test(file)) return false;
+  return /boxart|box|plush|figure|toy|pack|machine|photo/.test(file) || /\.(jpe?g|png|webp)$/.test(file);
+}
+
+async function bulbQuery(params) {
+  const url = new URL("https://bulbapedia.bulbagarden.net/w/api.php");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("photo");
+  return response.json();
+}
+
+function requetePhoto(item) {
+  return String(item.id)
+    .replace(/^(game|line|topps|stick|merlin|panini)-/, "")
+    .replace(/pok-mon/g, "pokemon")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function chercherPhotos(item) {
+  const query = requetePhoto(item);
+  const data = await bulbQuery({
+    action: "query",
+    generator: "search",
+    gsrsearch: query,
+    gsrlimit: "8",
+    prop: "pageimages",
+    pithumbsize: "400",
+    piprop: "thumbnail|name",
+  });
+  const tokens = normPhoto(query).split(" ").filter((token) => token.length >= 5);
+  const rows = [];
+  Object.values(data.query?.pages || {}).forEach((page) => {
+    if (!pageUtile(page.title, query)) return;
+    const file = page.pageimage || "";
+    const url = page.thumbnail?.source || "";
+    if (!file || !url.startsWith("https://archives.bulbagarden.net/")) return;
+    if (!fichierUtile(file)) return;
+    const hits = tokens.filter((token) => normPhoto(page.title).includes(token)).length;
+    rows.push({ url, hits, box: /boxart/i.test(file) ? 1 : 0 });
+  });
+  rows.sort((a, b) => b.hits - a.hits || b.box - a.box);
+  return rows.map((row) => row.url);
+}
+
+function imageCharge(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth > 40 && img.naturalHeight > 40);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
+let photoToken = 0;
+
+async function autrePhoto(id) {
+  const item = (state.univers || []).find((row) => String(row.id) === String(id));
+  if (!item) return;
+  const token = ++photoToken;
+  state.photoBusy = String(id);
+  state.photoNote = "";
+  paintOpenProduct();
+  try {
+    const suivantes = await chercherPhotos(item);
+    if (token !== photoToken) return;
+    const deja = new Set((state.photos[String(id)]?.rejected || []).map(nomFichier));
+    const actuel = nomFichier(universSrc(item));
+    if (actuel) deja.add(actuel);
+    let trouve = "";
+    for (const url of suivantes) {
+      if (deja.has(nomFichier(url))) continue;
+      if (await imageCharge(url)) {
+        trouve = url;
+        break;
+      }
+    }
+    if (token !== photoToken) return;
+    if (!trouve) {
+      state.photoNote = "Pas d'autre photo sur Bulbapedia.";
+    } else {
+      const rejected = [...(state.photos[String(id)]?.rejected || [])];
+      const courante = universSrc(item);
+      if (courante.startsWith("https://") && !rejected.includes(courante)) rejected.push(courante);
+      state.photos[String(id)] = { url: trouve, rejected: rejected.slice(-12) };
+      savePhotos();
+      state.photoNote = "Photo changée sur ce compte.";
+    }
+  } catch {
+    if (token === photoToken) state.photoNote = "Bulbapedia ne répond pas.";
+  } finally {
+    if (token === photoToken) {
+      state.photoBusy = "";
+      paintOpenProduct();
+      if (state.tab === "univers") paintUnivers();
+    }
+  }
 }
 
 function universFace(item) {
@@ -1902,7 +2097,7 @@ function universTiles() {
     if (item.set) bits.push(item.set);
     const day = releasedLabel(item.released);
     if (day) bits.push(day);
-    const price = usdHTML(item.usd);
+    const price = usdHTML(universMontant(item));
     return `
       <article class="tile univers-tile">
         ${universFace(item)}
@@ -4123,9 +4318,16 @@ function productHTML(item, family) {
     : `<span class="monogram">${esc(initials(item.name))}</span>`;
   const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
   const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
+  const montant = family === "univers" ? universMontant(item) : (typeof item.usd === "number" ? item.usd : null);
   const note = typeof item.usd === "number"
     ? tcgplayerNote(when)
-    : "Pas de cote unitaire pour cette ligne.";
+    : (family === "univers" ? venteNote(item) : "Pas de cote unitaire pour cette ligne.");
+  const cherche = state.photoBusy === String(item.id);
+  const photoBtn = family === "univers" ? `
+        <div class="fiche-actions">
+          <button class="btn" type="button" data-action="autre-photo" data-id="${esc(item.id)}" ${cherche ? "disabled" : ""}>${cherche ? "Recherche…" : (shot ? "Autre photo" : "Chercher une photo")}</button>
+        </div>
+        ${state.photoNote && productOpen?.id === String(item.id) ? `<p class="note">${esc(state.photoNote)}</p>` : ""}` : "";
   return `
     <article class="fiche">
       ${ficheBar()}
@@ -4135,8 +4337,9 @@ function productHTML(item, family) {
       <div class="fiche-body">
         <p class="kicker">${esc(bits.join(" · "))}</p>
         <h2>${esc(item.name)}</h2>
-        ${typeof item.usd === "number" ? `<p class="cote-price">${esc(usdPlain(item.usd))}</p>` : ""}
+        ${typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : ""}
         <p class="note">${esc(note)}</p>
+        ${photoBtn}
         ${family === "sealed" ? `<div class="fiche-actions">
           <button class="btn" type="button" data-action="coll-add" data-family="sealed" data-id="${esc(item.id)}" ${!inCollection(String(item.id)) && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${inCollection(String(item.id)) ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
         </div>` : ""}
@@ -4145,6 +4348,8 @@ function productHTML(item, family) {
 }
 
 function openProduct(item, family) {
+  const meme = productOpen?.id === String(item.id) && productOpen?.family === family;
+  if (!meme) state.photoNote = "";
   productOpen = { id: String(item.id), family };
   const dialog = document.getElementById("fiche");
   keepFiche();
@@ -4287,7 +4492,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=58", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=59", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5047,6 +5252,7 @@ function bind() {
           else coffretIntrouvable();
         });
       }
+      if (action === "autre-photo") autrePhoto(actionEl.dataset.id);
       if (action === "sealed-retry") {
         state.sealed = null;
         state.sealedLoading = false;
