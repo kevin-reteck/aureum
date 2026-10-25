@@ -728,26 +728,26 @@ function renderGrid() {
   if (state.loading && activeCards().length === 0) {
     grille.innerHTML = `<div class="grid">${skeletonTiles(12)}</div>`;
     if (foot) foot.innerHTML = "";
+    watchMore();
     return;
   }
   if (state.error && activeCards().length === 0) {
     grille.innerHTML = `<p class="empty">${esc(state.error)}</p>`;
     if (foot) foot.innerHTML = `<button class="btn" type="button" data-action="retry">Réessayer</button>`;
+    watchMore();
     return;
   }
   const shown = shownCards();
   if (!shown.length) {
     grille.innerHTML = `<p class="empty">Aucune carte ne correspond.</p>`;
     if (foot) foot.innerHTML = "";
+    watchMore();
     return;
   }
   grille.innerHTML = `<div class="grid">${shown.map(tileHTML).join("")}</div>`;
   const more = activeCards().length > shown.length;
-  if (foot) {
-    foot.innerHTML = more
-      ? `<div class="foot-row"><button class="btn" type="button" data-action="more">Afficher les suivantes</button></div>`
-      : "";
-  }
+  if (foot) foot.innerHTML = more ? `<div class="more-sentinel" data-more="galerie"></div>` : "";
+  watchMore();
 }
 
 function galleryHTML() {
@@ -1194,7 +1194,7 @@ function sealedTiles() {
 function sealedMore() {
   const total = sealedRows().length;
   if (state.sealedPage * PAGE_SIZE >= total) return "";
-  return `<button class="btn" type="button" data-sealed="more">Afficher les suivantes</button>`;
+  return `<div class="more-sentinel" data-more="sealed"></div>`;
 }
 
 function paintSealed() {
@@ -1208,6 +1208,7 @@ function paintSealed() {
   grid.innerHTML = sealedTiles();
   status.textContent = sealedStatus();
   foot.innerHTML = sealedMore();
+  watchMore();
 }
 
 function etbHTML() {
@@ -1361,7 +1362,7 @@ function universTiles() {
 
 function universMore() {
   if (state.universPage * PAGE_SIZE >= universRows().length) return "";
-  return `<button class="btn" type="button" data-univers="more">Afficher les suivantes</button>`;
+  return `<div class="more-sentinel" data-more="univers"></div>`;
 }
 
 function paintUnivers() {
@@ -1375,6 +1376,7 @@ function paintUnivers() {
   grid.innerHTML = universTiles();
   status.textContent = universStatus();
   foot.innerHTML = universMore();
+  watchMore();
 }
 
 function universHTML() {
@@ -2149,6 +2151,41 @@ function render() {
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
+  watchMore();
+}
+
+let moreObserver = null;
+
+function growPage(kind) {
+  if (kind === "galerie") {
+    if (activeCards().length <= shownCards().length) return;
+    state.page += 1;
+    renderGrid();
+    hydrateShown(epoch);
+    return;
+  }
+  if (kind === "sealed") {
+    if (state.sealedPage * PAGE_SIZE >= sealedRows().length) return;
+    state.sealedPage += 1;
+    paintSealed();
+    return;
+  }
+  if (kind === "univers") {
+    if (state.universPage * PAGE_SIZE >= universRows().length) return;
+    state.universPage += 1;
+    paintUnivers();
+  }
+}
+
+function watchMore() {
+  if (!moreObserver) {
+    moreObserver = new IntersectionObserver((entries) => {
+      const hit = entries.find((entry) => entry.isIntersecting);
+      if (hit) growPage(hit.target.dataset.more);
+    }, { rootMargin: "700px 0px" });
+  }
+  moreObserver.disconnect();
+  document.querySelectorAll("[data-more]").forEach((node) => moreObserver.observe(node));
 }
 
 function setTab(tab) {
@@ -2826,10 +2863,6 @@ function bind() {
         state.sealedPage = 1;
         render();
       }
-      if (sealedEl.dataset.sealed === "more") {
-        state.sealedPage += 1;
-        paintSealed();
-      }
     }
     if (universEl) {
       if (universEl.dataset.univers === "kind") {
@@ -2837,20 +2870,11 @@ function bind() {
         state.universPage = 1;
         render();
       }
-      if (universEl.dataset.univers === "more") {
-        state.universPage += 1;
-        paintUnivers();
-      }
     }
 
     if (actionEl) {
       const action = actionEl.dataset.action;
       if (action === "close") actionEl.closest("dialog")?.close();
-      if (action === "more") {
-        state.page += 1;
-        renderGrid();
-        hydrateShown(epoch);
-      }
       if (action === "retry") {
         if (state.view === "search") runSearch(state.query);
         else loadSet(state.gallerySeriesId, state.setId);

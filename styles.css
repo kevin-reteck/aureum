@@ -530,6 +530,7 @@ a.btn { display: inline-block; text-decoration: none; }
 }
 
 .foot-row { display: flex; justify-content: center; margin-top: 26px; }
+.more-sentinel { height: 1px; overflow-anchor: none; }
 
 .series-row {
   display: flex;
