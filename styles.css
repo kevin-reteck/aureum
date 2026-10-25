@@ -989,22 +989,84 @@ dialog.is-leaving::backdrop {
 }
 .fiche-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
-.binder-book { perspective: 1800px; margin-top: 8px; }
-.binder-sheet {
-  transform-origin: left center;
-  transform-style: preserve-3d;
-  background: #14110e;
-  border: 1px solid var(--line);
-  border-left: 8px solid #2c261c;
-  border-radius: 4px 14px 14px 4px;
-  padding: 16px 14px 16px 16px;
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.32);
-  animation: binder-open 0.48s cubic-bezier(0.16, 0.84, 0.32, 1);
+.binder-book {
+  position: relative;
+  max-width: 460px;
+  perspective: 1400px;
+  perspective-origin: left top;
+  margin: 28px 0 6px;
+  padding: 16px 14px 20px 0;
 }
-.binder-sheet.is-turning { box-shadow: -12px 20px 30px rgba(0, 0, 0, 0.36); }
+.binder-cover {
+  position: absolute;
+  z-index: 0;
+  inset: 0 6px 6px 0;
+  border-radius: 10px 18px 18px 10px;
+  background:
+    radial-gradient(120% 80% at 80% 0%, rgba(240, 215, 162, 0.08), transparent 46%),
+    linear-gradient(90deg, #100e0c 0 22px, #8a7048 22px 23px, #3a2c1e 23px);
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 215, 162, 0.22),
+    inset 0 0 0 4px rgba(20, 16, 12, 0.55),
+    0 22px 36px rgba(0, 0, 0, 0.46);
+}
+.binder-cover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 22px;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(90deg, #0c0b09, #4a4034 48%, #16130f 72%, #0c0b09);
+}
+.binder-cover::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: 18px;
+  bottom: 18px;
+  width: 7px;
+  border-radius: 0 3px 3px 0;
+  background: repeating-linear-gradient(90deg, #4a4034 0 1px, #14110e 1px 2px);
+}
+.binder-rings {
+  position: absolute;
+  z-index: 3;
+  left: 3px;
+  top: 8%;
+  bottom: 10%;
+  width: 16px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 128'%3E%3Cg fill='none' stroke='%23f0d7a2' stroke-width='2.2'%3E%3Cellipse cx='9' cy='14' rx='5.2' ry='7'/%3E%3Cellipse cx='9' cy='48' rx='5.2' ry='7'/%3E%3Cellipse cx='9' cy='82' rx='5.2' ry='7'/%3E%3Cellipse cx='9' cy='116' rx='5.2' ry='7'/%3E%3C/g%3E%3Cg fill='%23e8d3a4'%3E%3Cellipse cx='9' cy='14' rx='1.6' ry='2'/%3E%3Cellipse cx='9' cy='48' rx='1.6' ry='2'/%3E%3Cellipse cx='9' cy='82' rx='1.6' ry='2'/%3E%3Cellipse cx='9' cy='116' rx='1.6' ry='2'/%3E%3C/g%3E%3C/svg%3E") center / 16px 100% no-repeat;
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+}
+.binder-sheet {
+  position: relative;
+  z-index: 1;
+  margin-left: 30px;
+  transform-origin: left center;
+  transform: rotateY(-6deg);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 230, 0.05), transparent 22%),
+    #1b1814;
+  border: 1px solid rgba(240, 215, 162, 0.14);
+  border-left: 0;
+  border-radius: 2px 12px 12px 2px;
+  padding: 12px 10px 12px 14px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06),
+    2px 0 0 #3a3228,
+    4px 0 0 #1a1612,
+    12px 24px 28px rgba(0, 0, 0, 0.4);
+  animation: binder-open 0.5s cubic-bezier(0.16, 0.84, 0.32, 1);
+}
+.binder-sheet.is-turning { box-shadow: -18px 24px 32px rgba(0, 0, 0, 0.42), 2px 0 0 #3a3228, 4px 0 0 #1a1612; }
 @keyframes binder-open {
-  from { transform: rotateY(-12deg); }
-  to { transform: rotateY(0deg); }
+  from { transform: rotateY(-26deg); }
+  to { transform: rotateY(-6deg); }
 }
 .binder-grid {
   display: grid;
@@ -1012,26 +1074,55 @@ dialog.is-leaving::backdrop {
   gap: 8px;
 }
 .pocket {
+  display: grid;
   aspect-ratio: 63 / 88;
-  border: 1px solid rgba(240, 215, 162, 0.16);
-  border-radius: 8px;
-  background: #0c0b09;
-  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.05), transparent 42%),
+    #090807;
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 215, 162, 0.22),
+    inset 0 10px 12px rgba(255, 255, 255, 0.03),
+    inset 0 -12px 14px rgba(0, 0, 0, 0.5);
+  padding: 4px;
   overflow: hidden;
   position: relative;
   color: var(--muted);
   touch-action: none;
 }
-.pocket.is-full { border-style: solid; border-color: transparent; }
+.pocket::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.18) 0%, transparent 32%, transparent 64%, rgba(255, 255, 255, 0.08) 100%);
+  pointer-events: none;
+}
+.pocket.is-full {
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 215, 162, 0.3),
+    inset 0 -8px 12px rgba(0, 0, 0, 0.28);
+}
 .pocket.is-chosen { outline: 2px solid var(--gold-2); outline-offset: 2px; }
 .pocket-empty {
+  place-self: center;
+  position: relative;
+  z-index: 1;
   font-family: var(--serif);
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-.pocket-card { display: block; width: 100%; height: 100%; position: relative; }
-.pocket-card img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; }
+.pocket-card { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
+.pocket-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28), 0 6px 8px rgba(0, 0, 0, 0.42);
+}
 .binder-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .binder-search { margin-top: 16px; max-width: 420px; }
 .binder-search .field input {
@@ -1119,14 +1210,37 @@ dialog.is-leaving::backdrop {
 }
 .relief { position: relative; display: grid; justify-items: center; gap: 12px; padding: 18px 8px calc(12px + env(safe-area-inset-bottom)); }
 .relief-stage {
+  position: relative;
   perspective: 1100px;
   animation: relief-lift 0.44s cubic-bezier(0.16, 0.84, 0.28, 1);
 }
 .relief .stage {
   width: min(320px, 74vw);
   touch-action: none;
+  transform-style: preserve-3d;
   transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
   transition: none;
+  box-shadow: none;
+}
+.relief .stage::before {
+  content: "";
+  position: absolute;
+  inset: -1.6%;
+  border-radius: 14px;
+  background: linear-gradient(102deg, #3d3224 0%, #f0d7a2 14%, #241e16 40%, #c6a15b 76%, #14110e 100%);
+  transform: translateZ(-7px);
+}
+.relief-shadow {
+  position: absolute;
+  z-index: -1;
+  left: 14%;
+  right: 14%;
+  bottom: -6px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.62), transparent 72%);
+  transform: translate3d(calc(var(--sx, 0) * -1px), calc(var(--sy, 0) * 0.45px), 0);
+  pointer-events: none;
 }
 .relief .close { position: relative; z-index: 2; justify-self: end; }
 .relief .fiche-actions { position: relative; z-index: 2; }
@@ -1238,8 +1352,10 @@ dialog.is-leaving::backdrop {
 .pocket.is-full:focus-visible .holo.is-quiet { opacity: 0.55; }
 .relief-name { margin: 0; font-family: var(--serif); font-size: 1.6rem; font-weight: 560; }
 @media (max-width: 720px) {
-  .binder-sheet { padding: 10px 8px 10px 18px; }
+  .binder-book { padding: 12px 8px 16px 0; }
+  .binder-sheet { margin-left: 26px; padding: 8px 6px 8px 12px; }
   .binder-grid { gap: 6px; }
+  .pocket { padding: 3px; }
 }
 .fiche-error {
   display: flex;

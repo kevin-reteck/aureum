@@ -1936,9 +1936,11 @@ function binderHTML() {
         <p class="lede" id="binder-status">${esc(binderLabel())}</p>
       </header>
       <div class="binder-book">
+        <div class="binder-cover" aria-hidden="true"></div>
         <div class="binder-sheet" id="binder-sheet">
           <div class="binder-grid" id="binder-grid">${page.map((id, index) => pocketHTML(id, index)).join("")}</div>
         </div>
+        <div class="binder-rings" aria-hidden="true"></div>
       </div>
       <div class="binder-nav">
         <button class="btn" type="button" data-binder="prev">Précédente</button>
@@ -1969,6 +1971,7 @@ function reliefHTML(card, slot) {
           ${holoSpan(card, false)}
           <span class="shine" aria-hidden="true"></span>
         </div>
+        <span class="relief-shadow" aria-hidden="true"></span>
       </div>
       <p class="relief-name">${esc(prettyName(card.name))}</p>
       <p class="hint">${foilHint(kind)}</p>
@@ -2088,6 +2091,9 @@ function stepFoilTilt() {
   stage.style.setProperty("--ry", `${ry.toFixed(2)}deg`);
   stage.style.setProperty("--mx", `${(50 + (foilTilt.x - 0.5) * 140).toFixed(1)}%`);
   stage.style.setProperty("--my", `${(42 + (foilTilt.y - 0.5) * 120).toFixed(1)}%`);
+  const host = stage.closest(".relief-stage");
+  host?.style.setProperty("--sx", ((foilTilt.x - 0.5) * 22 * gain).toFixed(1));
+  host?.style.setProperty("--sy", ((foilTilt.y - 0.5) * 14 * gain).toFixed(1));
   const left = Math.abs(foilTilt.tx - foilTilt.x) + Math.abs(foilTilt.ty - foilTilt.y);
   if (foilTilt.finger || left > 0.003) kickFoilTilt();
 }
@@ -2287,11 +2293,11 @@ function turnBinder(dir) {
     apply();
     sheet.classList.remove("is-turning");
     sheet.style.transition = "none";
-    sheet.style.transform = `rotateY(${dir > 0 ? 14 : -14}deg)`;
+    sheet.style.transform = `rotateY(${dir > 0 ? 18 : -58}deg)`;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         sheet.style.transition = "transform .42s cubic-bezier(.16,.84,.3,1)";
-        sheet.style.transform = "rotateY(0deg)";
+        sheet.style.transform = "rotateY(-6deg)";
         const clear = (event) => {
           if (event.propertyName && event.propertyName !== "transform") return;
           sheet.removeEventListener("transitionend", clear);
@@ -2309,7 +2315,7 @@ function turnBinder(dir) {
   sheet.style.animation = "none";
   sheet.classList.add("is-turning");
   sheet.style.transition = "transform .32s cubic-bezier(.4,0,.2,1)";
-  sheet.style.transform = `rotateY(${dir > 0 ? -22 : 22}deg)`;
+  sheet.style.transform = `rotateY(${dir > 0 ? -58 : 18}deg)`;
   sheet.addEventListener("transitionend", onOut);
   window.setTimeout(swap, 380);
 }
@@ -3558,7 +3564,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=39", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=40", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
