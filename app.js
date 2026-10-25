@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=53";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=54";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3923,7 +3923,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=53", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=54", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -3999,11 +3999,25 @@ function clarteToile(toile) {
   return total ? clairs / total : 0;
 }
 
+function horsCadre(element) {
+  const classe = element.classList;
+  if (!classe?.contains("tile") && !classe?.contains("set-tile") && !classe?.contains("coll-card") && !classe?.contains("pocket")) return false;
+  const box = element.getBoundingClientRect();
+  return box.bottom < -80 || box.top > window.innerHeight + 80 || box.right < -80 || box.left > window.innerWidth + 80;
+}
+
+function scanPriveVisible(racine) {
+  return [...racine.querySelectorAll("img[src*='tcgplayer']")].some((img) => {
+    const box = img.getBoundingClientRect();
+    return box.bottom > 0 && box.top < window.innerHeight && box.right > 0 && box.left < window.innerWidth;
+  });
+}
+
 async function priseEcran() {
   const html2canvas = await chargerCapture();
   const width = Math.max(1, Math.round(window.innerWidth));
   const height = Math.max(1, Math.round(window.innerHeight));
-  const feuille = document.body.classList.contains("sheet-open");
+  const feuille = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open) || null;
   const options = {
     x: feuille ? 0 : window.scrollX,
     y: feuille ? 0 : window.scrollY,
@@ -4017,24 +4031,36 @@ async function priseEcran() {
     useCORS: true,
     backgroundColor: "#0b0a08",
     logging: false,
-    imageTimeout: 4000,
-    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote",
+    imageTimeout: 1800,
+    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote" || (!feuille && horsCadre(element)),
     onclone: figerCouleurs,
   };
   let toile;
   try {
-    toile = await html2canvas(document.body, options);
+    toile = await html2canvas(feuille || document.body, options);
   } catch {
     toile = null;
   }
-  const scansPrives = document.querySelector("img[src*='tcgplayer']");
+  const scansPrives = scanPriveVisible(feuille || document);
   if (!toile || clarteToile(toile) < 0.08 || scansPrives) {
     const hote = document.createElement("div");
     hote.id = "capture-hote";
     hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:1;`;
-    const ouvert = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open);
-    const entete = ouvert ? "" : (document.querySelector("header")?.outerHTML || "");
-    hote.innerHTML = `${entete}${ouvert?.innerHTML || document.querySelector("main")?.innerHTML || ""}`;
+    const marques = [];
+    if (!feuille) {
+      document.querySelectorAll(".tile, .set-tile, .coll-card, .pocket").forEach((element) => {
+        if (!horsCadre(element)) return;
+        element.dataset.hors = "1";
+        marques.push(element);
+      });
+    }
+    const entete = feuille ? "" : (document.querySelector("header")?.outerHTML || "");
+    try {
+      hote.innerHTML = `${entete}${feuille?.innerHTML || document.querySelector("main")?.innerHTML || ""}`;
+      hote.querySelectorAll("[data-hors='1']").forEach((element) => element.remove());
+    } finally {
+      marques.forEach((element) => delete element.dataset.hors);
+    }
     document.body.appendChild(hote);
     try {
       hote.querySelectorAll("img").forEach((img) => {
@@ -4077,7 +4103,7 @@ async function priseEcran() {
           if (copie) copie.style.opacity = "1";
         },
       });
-      if (!toile || ouvert || clarteToile(autre) >= clarteToile(toile)) toile = autre;
+      if (!toile || feuille || clarteToile(autre) >= clarteToile(toile)) toile = autre;
     } catch {
       /* La première photo reste si le second essai échoue. */
     } finally {
@@ -4288,28 +4314,15 @@ function montrerSignal(report, note) {
 }
 
 let signalOuverture = false;
+let signalGeneration = 0;
 
 async function ouvrirSignal() {
   const dialog = document.getElementById("signal");
   if (!dialog || dialog.open || signalOuverture) return;
+  const generation = ++signalGeneration;
   signalOuverture = true;
   const report = brouillonSignal("");
-  let shot = "";
-  try {
-    shot = await Promise.race([
-      priseEcran(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 14000)),
-    ]);
-  } catch {
-    shot = "";
-  } finally {
-    signalOuverture = false;
-  }
-  if (dialog.open) return;
-  report.shot = shot || "";
-  montrerSignal(report, shot
-    ? "La photo est prise. Dis ce qui cloche, puis envoie."
-    : "La photo n'a pas pu être prise. Le texte suffit.");
+  montrerSignal(report, "La photo se prépare.");
   const texte = document.getElementById("signal-texte");
   if (texte) texte.value = "";
   paintSignaux();
@@ -4317,9 +4330,33 @@ async function ouvrirSignal() {
   lockSheet();
   texte?.focus();
   chargerSignaux();
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+  if (generation !== signalGeneration || !dialog.open) {
+    signalOuverture = false;
+    return;
+  }
+  let shot = "";
+  try {
+    shot = await Promise.race([
+      priseEcran(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 8000)),
+    ]);
+  } catch {
+    shot = "";
+  } finally {
+    signalOuverture = false;
+  }
+  if (generation !== signalGeneration || !dialog.open) return;
+  report.shot = shot || "";
+  montrerSignal(report, shot
+    ? "La photo est prise. Dis ce qui cloche, puis envoie."
+    : "La photo n'a pas pu être prise. Le texte suffit.");
 }
 
 function fermerSignal() {
+  signalGeneration += 1;
   const dialog = document.getElementById("signal");
   if (dialog?.open) dialog.close();
   unlockSheet();
@@ -5076,6 +5113,7 @@ function boot() {
   });
   bind();
   bindSignal();
+  chargerCapture().catch(() => {});
   registerServiceWorker();
   const fxReady = activeCurrency() !== "USD" || state.currency !== "EUR" ? loadFx() : Promise.resolve(null);
   const context = readContext();
