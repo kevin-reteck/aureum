@@ -1477,52 +1477,72 @@ dialog.is-leaving::backdrop {
   min-height: 44px;
 }
 #journal {
-  width: min(560px, calc(100vw - 28px));
-  max-height: min(880px, calc(100dvh - 28px));
+  width: min(460px, calc(100vw - 36px));
+  height: fit-content;
+  max-height: min(640px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  border: 1px solid rgba(240, 215, 162, 0.42);
+  border-radius: 22px;
+  background:
+    radial-gradient(420px 160px at 50% -20%, rgba(198, 161, 91, 0.2), transparent 68%),
+    #14110e;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 236, 200, 0.2);
 }
 .journal {
   display: flex;
   flex-direction: column;
-  max-height: min(880px, calc(100dvh - 28px));
+  min-height: 0;
+  max-height: min(640px, calc(100dvh - 48px));
 }
 .journal-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 22px 22px 16px;
+  padding: 26px 22px 8px;
 }
-.journal h2 { margin: 0 0 8px; }
-.journal .lede { margin: 0; }
+.journal h2 { margin: 0 0 8px; font-size: clamp(1.7rem, 3vw, 2.15rem); }
+.journal .lede { margin: 0; font-size: 0.98rem; }
 .journal-list {
-  margin: 18px 0 8px;
+  margin: 18px 0 12px;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 .journal-list li {
   position: relative;
-  padding-left: 18px;
-  line-height: 1.45;
+  padding: 11px 12px 11px 30px;
+  border-radius: 14px;
+  line-height: 1.4;
+  background: rgba(255, 248, 230, 0.045);
+  border: 1px solid rgba(240, 215, 162, 0.14);
 }
 .journal-list li::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 0.55em;
+  left: 13px;
+  top: 1.05em;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--gold);
+  box-shadow: 0 0 0 3px rgba(198, 161, 91, 0.16);
 }
 .journal-bas {
   flex: none;
-  padding: 12px 22px calc(16px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
-  background: #14120f;
+  padding: 12px 18px 18px;
+  background: linear-gradient(180deg, rgba(20, 17, 14, 0), #14110e 28%);
 }
-.journal-bas .btn { width: 100%; min-height: 48px; font-size: 1rem; }
+.journal-bas .btn {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 14px;
+  font-size: 1.05rem;
+}
 #signal {
   width: min(560px, calc(100vw - 28px));
   overflow: auto;
@@ -1787,21 +1807,24 @@ dialog.is-leaving::backdrop {
     max-width: none;
   }
   #journal {
+    top: 0;
+    right: max(14px, env(safe-area-inset-right));
+    bottom: 0;
+    left: max(14px, env(safe-area-inset-left));
     width: auto;
-    max-width: none;
-    max-height: none;
+    height: fit-content;
+    max-height: calc(100lvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+    min-height: 0;
+    margin: auto;
+    border-radius: 22px;
     overflow: hidden;
   }
   .journal {
-    height: 100%;
-    max-height: 100%;
+    height: auto;
+    max-height: calc(100lvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
   }
-  .journal-body {
-    padding: calc(22px + max(env(safe-area-inset-top), 59px)) 16px 12px;
-  }
-  .journal-bas {
-    padding: 12px 16px calc(12px + max(env(safe-area-inset-bottom), 34px));
-  }
+  .journal-body { padding: 22px 16px 8px; }
+  .journal-bas { padding: 10px 14px 14px; }
   #signal .signal { padding-top: 0; }
   #signal .signal-body { padding: 8px 16px calc(28px + max(env(safe-area-inset-bottom), 34px)); }
   #signal .signal-top {
