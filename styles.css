@@ -1543,6 +1543,11 @@ dialog.is-leaving::backdrop {
   border-radius: 14px;
   font-size: 1.05rem;
 }
+html.is-capture, html.is-capture * , html.is-capture *::backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.signal .fiche-actions .btn.solid { width: 100%; }
 #signal {
   width: min(560px, calc(100vw - 28px));
   overflow: auto;
@@ -1594,7 +1599,7 @@ dialog.is-leaving::backdrop {
 }
 .signal-item {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   width: 100%;

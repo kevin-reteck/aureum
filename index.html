@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=48">
+    <link rel="stylesheet" href="styles.css?v=50">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
@@ -167,11 +167,10 @@
             <figcaption class="hint" id="signal-contexte"></figcaption>
           </figure>
           <div class="fiche-actions">
-            <button class="btn solid" type="submit">Garder</button>
-            <button class="btn" type="button" data-signal="partager">Partager à Cursor</button>
+            <button class="btn solid" type="submit">Envoyer</button>
           </div>
-          <p class="hint">Sans base de données, le journal reste sur cet appareil. Partagez la capture et le texte à Cursor, en mode Ask : il fait un debrief, sans modifier le code. Pour qu'il les relise plus tard, déposez les fichiers dans le dossier signalements du dépôt.</p>
-          <h3>Sur cet appareil</h3>
+          <p class="hint">Un envoi, et le signalement reste dans le cabinet. Tout le monde le voit, avec la photo.</p>
+          <h3>Signalements</h3>
           <div id="signal-list"></div>
         </div>
       </form>
@@ -189,6 +188,7 @@
             <li>Tu restes connecté quand la page se recharge.</li>
             <li>Même déjà connecté, une mise à jour rouvre ce message une fois.</li>
             <li>Un clic sur une carte ouvre de nouveau sa fiche.</li>
+            <li>Un signalement s'envoie, avec la photo de l'écran, et tout le monde le voit.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -199,7 +199,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=48";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=50";
 
       const porte = document.getElementById("porte");
       const entrerForm = document.getElementById("porte-entrer");
@@ -221,7 +221,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=48");
+        import("./app.js?v=50");
       }
 
       function fermerPorte() {

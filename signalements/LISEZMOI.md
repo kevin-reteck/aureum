@@ -1,14 +1,17 @@
 # Signalements
 
-Il n'y a pas de base de données. Le bouton « Signaler un problème », dans le pied de page du cabinet, garde le journal sur l'appareil et prépare un debrief avec une capture d'écran.
+Le bouton insecte ouvre une fenêtre. Il n'y a qu'un bouton : Envoyer. La photo part avec le texte.
 
-## Où Cursor les lit
+Tout le monde voit la même liste : d'abord ce dossier, puis les envois des dernières heures. Si l'envoi échoue, le signalement reste seulement sur l'appareil qui l'a écrit.
 
-Déposer ici chaque couple de fichiers :
+## Dans ce dossier
 
-- `signalement-<id>.md` — le texte du debrief
-- `signalement-<id>.jpg` — la capture jointe
+- `journal.json` — la liste, sans la photo dedans
+- `<id>.jpg` — la photo
+- `<id>.md` — le texte, l'endroit, et le compte
 
-## Debrief (mode Ask)
+Un script les copie ici depuis le canal d'envoi. Les pièces jointes de ce canal ne restent que quelques heures : une fois le fichier là, il reste.
 
-Quand on demande les signalements, un debrief, ou de regarder ces fichiers : lire le dossier, puis répondre sans modifier le code. Le debrief dit le symptôme, ce que montre la capture, la cause probable et une piste.
+## Pour les lire
+
+Ouvrir `journal.json`, puis la photo et le texte du même identifiant.
