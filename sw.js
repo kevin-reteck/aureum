@@ -1,10 +1,9 @@
-const CACHE = "aureum-v6";
+const CACHE = "aureum-v7";
 const SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./or.config.js",
   "./sealed.json",
   "./univers.json",
   "./manifest.json",

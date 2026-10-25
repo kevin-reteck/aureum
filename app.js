@@ -1,11 +1,8 @@
-import { OR_LINK, OR_PORTAL } from "./or.config.js";
-
 const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
-const OR_KEY = "aureum.or";
 const CTX_KEY = "aureum.contexte";
 const FREE_FAVS = 3;
-const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "or"];
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris"];
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
 const ICONIC_IDS = ["swsh7-215", "base1-4", "base1-2", "base1-15", "base1-10", "base1-6", "sv03.5-205", "base1-58"];
@@ -137,33 +134,8 @@ function deltaInfo(card) {
   return { pct, dir };
 }
 
-function subscribed() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(OR_KEY) || "null");
-    return raw?.actif === true;
-  } catch {
-    return false;
-  }
-}
-
-function stripeHref(value) {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:") return "";
-    const host = url.hostname;
-    if (host !== "buy.stripe.com" && host !== "checkout.stripe.com" && host !== "billing.stripe.com") return "";
-    return url.href;
-  } catch {
-    return "";
-  }
-}
-
 function isOr() {
-  return subscribed() || !stripeHref(OR_LINK);
-}
-
-function grantOr() {
-  localStorage.setItem(OR_KEY, JSON.stringify({ actif: true, depuis: new Date().toISOString() }));
+  return true;
 }
 
 function lockHTML() {
@@ -678,7 +650,6 @@ function headHTML() {
       <p class="lede" id="grille-status">${esc(bits.join(" · "))}</p>
     </header>
     ${state.setId === "base1" ? `<p class="note">1re édition : le petit 1 est à gauche du descriptif, sous l'illustration.</p>` : ""}
-    ${!isOr() ? `<p class="note">Les cotes du catalogue sont dans Aureum Or. Les trois cartes de la une restent en aperçu.</p>` : ""}
     <p class="note" id="hydrate-note"></p>`;
 }
 
@@ -825,15 +796,6 @@ function quoteHTML() {
 }
 
 function cotesHTML() {
-  if (!isOr()) {
-    return `
-      <section class="panel or-gate">
-        <p class="kicker">Aureum Or</p>
-        <h2>Salle des cotes.</h2>
-        <p class="lede">Le classement par tendance Cardmarket est réservé à l'abonnement.</p>
-        <button class="btn solid" type="button" data-tab="or">Voir l'abonnement</button>
-      </section>`;
-  }
   const setName = prettyName(state.setDetail?.name || "l'extension");
   const running = Boolean(state.quote?.running);
   const label = running
@@ -881,7 +843,7 @@ function favorisHTML() {
           <p class="kicker">Cabinet</p>
           <h2>Favoris</h2>
         </div>
-        <p class="lede">${isOr() ? "Les cartes épinglées restent dans ce navigateur." : "Trois favoris dans l'offre gratuite. Aureum Or enlève la limite."}</p>
+        <p class="lede">Les cartes épinglées restent dans ce navigateur.</p>
       </header>
       <div class="grid fav-grid">${state.favorites.map((card) => `
         <article class="tile" data-card="${esc(card.id)}">
@@ -1201,41 +1163,6 @@ async function loadUnivers() {
 }
 
 
-function orHTML() {
-  const href = stripeHref(OR_LINK);
-  const portal = stripeHref(OR_PORTAL);
-  if (subscribed()) {
-    return `
-      <section class="panel or-page">
-        <p class="kicker">Aureum Or</p>
-        <h2>Abonnement actif.</h2>
-        <p class="lede">Les cotes, la salle, les scellés et les favoris illimités sont ouverts sur cet appareil.</p>
-        ${portal ? `<a class="btn" href="${esc(portal)}">Gérer l'abonnement</a>` : `<p class="hint">Pour arrêter, ouvrez le lien dans le reçu Stripe.</p>`}
-      </section>`;
-  }
-  const pay = href
-    ? `<a class="btn solid" href="${esc(href)}">S'abonner avec Stripe</a>`
-    : `<p class="note">Paiement Stripe en préparation.</p>`;
-  return `
-    <section class="panel or-page">
-      <p class="kicker">Abonnement</p>
-      <h2>Aureum Or</h2>
-      <p class="or-price">4,90 € <small>/ mois</small></p>
-      <p class="lede">Le catalogue reste gratuit. Or ouvre les cotes et le cabinet sans limite.</p>
-      <ul class="or-list">
-        <li>Toutes les cotes Cardmarket en euros, et la variation sur 30 jours</li>
-        <li>La salle des cotes</li>
-        <li>Les cotes des ETB, des coffrets et des UPC</li>
-        <li>Les cotes des boosters</li>
-        <li>Favoris illimités</li>
-        <li>Le scan en grand dans la fiche</li>
-      </ul>
-      <p class="hint">Gratuit : le catalogue, les images, les fiches, l'univers, trois favoris, et les trois cartes de la une avec leur cote.</p>
-      ${pay}
-      <p class="hint">Paiement traité par Stripe. Aureum ne reçoit pas le numéro de carte. L'accès s'ouvre sur l'appareil qui revient du paiement.</p>
-    </section>`;
-}
-
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
@@ -1244,7 +1171,6 @@ function render() {
   else if (state.tab === "etb") app.innerHTML = etbHTML();
   else if (state.tab === "univers") app.innerHTML = universHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
-  else if (state.tab === "or") app.innerHTML = orHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
@@ -1631,7 +1557,6 @@ function ficheHTML(card) {
         ${card.description ? `<blockquote class="flavor">${esc(card.description)}</blockquote>` : ""}
         <div class="duo">${duoHTML(card)}</div>
         ${isOr() && (trendOf(card) >= 0 || bestVariant(card)) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
-        ${!isOr() && (trendOf(card) >= 0 || bestVariant(card)) ? `<button class="btn solid" type="button" data-tab="or">Voir la cote avec Aureum Or</button>` : ""}
         ${isOr() && when ? `<p class="hint">Mise à jour le ${esc(when)}.</p>` : ""}
         ${statsHTML(card)}
         ${variantsHTML(card)}
@@ -1642,7 +1567,7 @@ function ficheHTML(card) {
         <div class="fiche-actions">
           <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
         </div>
-        <p class="hint">${isOr() ? "Cote indicative Cardmarket, pas une offre d'achat." : "Le grand scan et les montants sont dans Aureum Or."}</p>
+        <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
       </div>
     </article>`;
 }
@@ -1935,19 +1860,9 @@ function registerServiceWorker() {
   else window.addEventListener("load", register);
 }
 
-function consumeReturn() {
-  const params = new URLSearchParams(location.search);
-  const abo = params.get("abo");
-  if (abo === "succes") grantOr();
-  if (!abo) return;
-  const hash = location.hash && location.hash !== "#" ? location.hash : "#or";
-  history.replaceState(null, "", `${location.pathname}${hash}`);
-}
-
 function boot() {
   bind();
   registerServiceWorker();
-  consumeReturn();
   const context = readContext();
   state.gallerySeriesId = context.seriesId;
   state.setId = context.setId;
