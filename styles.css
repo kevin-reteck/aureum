@@ -718,6 +718,7 @@ img.is-trying { opacity: 0; }
 .deal-note.up { color: var(--up); }
 
 dialog {
+  position: relative;
   width: min(980px, calc(100vw - 28px));
   max-height: min(880px, calc(100vh - 28px));
   padding: 0;
@@ -759,6 +760,17 @@ dialog::backdrop {
   border-radius: 999px;
   padding: 8px 12px;
 }
+.fiche-bar {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fiche-bar .close { position: static; }
+.fiche-bar .next-card { margin: 0; }
 .identity { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
 .type-pill, .hp, .legal {
   border-radius: 999px;

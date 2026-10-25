@@ -2523,6 +2523,23 @@ function legalHTML(legal) {
   return bits.length ? bits.join(" · ") : "Hors format actuel";
 }
 
+function ficheBar() {
+  const random = document.getElementById("fiche")?.dataset.mode === "random";
+  const next = random
+    ? `<button class="btn solid next-card" type="button" data-action="random-next">Suivante</button>`
+    : "";
+  return `<div class="fiche-bar">${next}<button class="close" type="button" data-action="close">Fermer</button></div>`;
+}
+
+function nextRandomId() {
+  const poolCards = state.setCards.length ? state.setCards : activeCards();
+  if (!poolCards.length) return "";
+  const current = document.getElementById("fiche")?.dataset.current || "";
+  const others = poolCards.filter((card) => card.id !== current);
+  const source = others.length ? others : poolCards;
+  return source[Math.floor(Math.random() * source.length)].id;
+}
+
 function ficheHTML(card) {
   const types = Array.isArray(card.types) ? card.types : [];
   const when = formatDay(card.pricing?.cardmarket?.updated);
@@ -2530,7 +2547,7 @@ function ficheHTML(card) {
   const collOn = inCollection(card.id);
   return `
     <article class="fiche">
-      <button class="close" type="button" data-action="close">Fermer</button>
+      ${ficheBar()}
       <div class="fiche-art">
         <div class="stage" data-tilt data-label="${esc(initials(card.name))}">
           ${imgTag(card, isOr() ? "high" : "low", true)}
@@ -2568,15 +2585,16 @@ function ficheHTML(card) {
 }
 
 function fichePending() {
-  return `<div class="pending">Ouverture de la fiche…</div>`;
+  return `<div class="pending">${ficheBar()}Ouverture de la fiche…</div>`;
 }
 
-async function openFiche(id) {
+async function openFiche(id, mode) {
   const safe = cleanId(id, "");
   if (!safe) return;
   const dialog = document.getElementById("fiche");
   dialog.dataset.current = safe;
-  dialog.innerHTML = fichePending();
+  dialog.dataset.mode = mode === "random" ? "random" : "";
+  if (!dialog.open) dialog.innerHTML = fichePending();
   if (!dialog.open) dialog.showModal();
   try {
     const card = await getCard(safe);
@@ -2585,7 +2603,7 @@ async function openFiche(id) {
     touchFav(card);
   } catch {
     if (dialog.dataset.current !== safe) return;
-    dialog.innerHTML = `<div class="fiche-error"><p>Impossible d'ouvrir cette fiche.</p><button class="btn" type="button" data-action="close">Fermer</button></div>`;
+    dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>Impossible d'ouvrir cette fiche.</p></div>`;
   }
 }
 
@@ -2900,11 +2918,9 @@ function bind() {
         saveFavs();
         render();
       }
-      if (action === "random") {
-        const poolCards = state.setCards.length ? state.setCards : activeCards();
-        if (!poolCards.length) return;
-        const pick = poolCards[Math.floor(Math.random() * poolCards.length)];
-        openFiche(pick.id);
+      if (action === "random" || action === "random-next") {
+        const pick = nextRandomId();
+        if (pick) openFiche(pick, "random");
       }
       if (action === "jump") {
         document.getElementById("grille-titre")?.scrollIntoView({ behavior: motionOK ? "smooth" : "auto", block: "start" });
