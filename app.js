@@ -320,9 +320,14 @@ function rescueBlankScan(img, card) {
 }
 
 function imgTag(card, size, eager) {
+  const quality = size === "high" ? "high" : "low";
   const urls = artCandidates(card.image, size);
-  const edition = editionArt(card, size === "high" ? "high" : "low");
+  const edition = editionArt(card, quality);
   if (edition) urls.unshift(edition);
+  if (!urls.length) {
+    const market = marketArt(card, quality);
+    if (market) urls.push(market);
+  }
   const mark = esc(initials(card.name));
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
@@ -529,6 +534,14 @@ function patchCard(full) {
     }
     const img = node.querySelector("img");
     const quality = img?.dataset.quality === "high" ? "high" : "low";
+    if (!img) {
+      const markup = imgTag(full, quality, false);
+      if (markup.includes("<img")) {
+        node.querySelectorAll(".art, .rank-art").forEach((art) => {
+          art.innerHTML = markup;
+        });
+      }
+    }
     const edition = editionArt(full, quality);
     if (img && edition && img.getAttribute("src") !== edition && !String(img.getAttribute("src") || "").includes("tcgplayer-cdn")) {
       img.dataset.fallbacks = artCandidates(full.image, quality).join("|");
