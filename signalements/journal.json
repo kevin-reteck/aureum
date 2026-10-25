@@ -1,3 +1,34 @@
 {
-  "reports": []
+  "reports": [
+    {
+      "id": "20261025-2012-lo9q",
+      "when": "25 oct. 2026, 20:12",
+      "where": "Onglet galerie · search · Extension me05 · Fiche ecard1-6 · 402 × 874",
+      "url": "http://127.0.0.1:8765/?v=50#galerie",
+      "qui": "kevin@example.com",
+      "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
+      "errors": [],
+      "image": "20261025-2012-lo9q.jpg"
+    },
+    {
+      "id": "20261025-2006-h2ab",
+      "when": "25 oct. 2026, 20:06",
+      "where": "Onglet galerie · search · Extension me05 · Fiche ecard1-6 · 402 × 874",
+      "url": "http://127.0.0.1:8765/?v=50#galerie",
+      "qui": "kevin@example.com",
+      "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
+      "errors": [],
+      "image": ""
+    },
+    {
+      "id": "20261025-2005-umt7",
+      "when": "25 oct. 2026, 20:05",
+      "where": "Onglet galerie · search · Extension me05 · 402 × 874",
+      "url": "http://127.0.0.1:8765/?v=50#galerie",
+      "qui": "kevin@example.com",
+      "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
+      "errors": [],
+      "image": ""
+    }
+  ]
 }
