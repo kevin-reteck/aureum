@@ -16,14 +16,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=52">
+    <link rel="stylesheet" href="styles.css?v=53">
     <style>html,body{background:#0b0a08}</style>
     <script>
-      try {
-        const session = localStorage.getItem("aureum.session") || "";
-        const brut = JSON.parse(localStorage.getItem("aureum.comptes") || "{}");
-        if (session.includes("@") && brut.users && brut.users[session]) document.documentElement.dataset.porte = "ok";
-      } catch (error) { /* L'appareil refuse le stockage : la porte reste fermée. */ }
       window.aureumErreurs = [];
       function aureumNoterErreur(texte) {
         const liste = window.aureumErreurs;
@@ -36,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "52";
+      const VERSION_PAGE = "53";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -100,7 +95,17 @@
   </head>
   <body class="locked">
     <div id="porte">
-      <form class="porte-form" id="porte-entrer">
+      <form class="porte-form" id="porte-code">
+        <p class="kicker">Cabinet privé</p>
+        <h1>Aureum</h1>
+        <p class="lede">Ce cabinet est fermé. Le code l'ouvre sur cet appareil.</p>
+        <label class="field" for="porte-code-mot">Code
+          <input id="porte-code-mot" type="password" autocomplete="current-password" enterkeyhint="go" required>
+        </label>
+        <button class="btn solid" type="submit">Entrer</button>
+        <p class="note" id="porte-code-note" role="alert"></p>
+      </form>
+      <form class="porte-form" id="porte-entrer" hidden>
         <p class="kicker">Cabinet privé</p>
         <h1>Aureum</h1>
         <p class="lede" id="porte-lede">Entre avec ton adresse et ton mot de passe, ou crée un compte.</p>
@@ -252,6 +257,9 @@
             <li>Un signalement s'envoie, avec la photo de l'écran, et tout le monde le voit.</li>
             <li>Les ETB, les coffrets et les UPC entrent dans la collection.</li>
             <li>Si l'app est restée ouverte, une mise à jour recharge la page.</li>
+            <li>Si tu n'avais pas lu les précédentes, elles restent avec les nouvelles.</li>
+            <li>Une extension affiche toutes ses cartes. Celles qui manquent en français arrivent en anglais.</li>
+            <li>Le code du cabinet est demandé à chaque ouverture.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -262,16 +270,24 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=52";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=53";
 
+      const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
       const porte = document.getElementById("porte");
+      const codeForm = document.getElementById("porte-code");
       const entrerForm = document.getElementById("porte-entrer");
       const creerForm = document.getElementById("porte-creer");
       const resetForm = document.getElementById("porte-reset");
       let cabinetOuvert = false;
 
+      async function empreinte(texte) {
+        const octets = new TextEncoder().encode(texte);
+        const tampon = await crypto.subtle.digest("SHA-256", octets);
+        return [...new Uint8Array(tampon)].map((octet) => octet.toString(16).padStart(2, "0")).join("");
+      }
+
       function montrer(cible) {
-        [entrerForm, creerForm, resetForm].forEach((form) => {
+        [codeForm, entrerForm, creerForm, resetForm].forEach((form) => {
           form.hidden = form !== cible;
           const note = form.querySelector(".note");
           if (note) note.textContent = "";
@@ -284,7 +300,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=52");
+        import("./app.js?v=53");
       }
 
       function fermerPorte() {
@@ -298,8 +314,26 @@
       if (aDesOrphelins()) {
         document.getElementById("porte-lede").textContent = "Le premier compte reprend le classeur, les favoris et la collection déjà sur cet appareil.";
       }
-      if (sessionActive()) ouvrirCabinet();
-      else fermerPorte();
+      montrer(codeForm);
+
+      codeForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = document.getElementById("porte-code-note");
+        const input = document.getElementById("porte-code-mot");
+        const bouton = codeForm.querySelector("[type=submit]");
+        bouton.disabled = true;
+        const hash = await empreinte(input.value);
+        bouton.disabled = false;
+        if (hash !== PORTE_HASH) {
+          note.textContent = "Code incorrect.";
+          input.value = "";
+          input.focus();
+          return;
+        }
+        input.value = "";
+        if (sessionActive()) ouvrirCabinet();
+        else fermerPorte();
+      });
 
       document.getElementById("porte-vers-creer").addEventListener("click", () => {
         document.getElementById("creer-email").value = document.getElementById("porte-email").value;
