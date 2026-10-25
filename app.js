@@ -2803,9 +2803,7 @@ async function decodeShare(token) {
 function collBox(item, editable) {
   const bits = [sealedLabel(item.box)];
   if (item.setName) bits.push(item.setName);
-  const price = typeof item.usd === "number"
-    ? usdHTML(item.usd)
-    : `<span class="price-missing">Cote indisponible</span>`;
+  const price = boxPriceHTML(item.usd);
   const note = editable
     ? `<label class="coll-label">Commentaire
         <textarea data-coll-note="${esc(item.id)}" data-lang="fr" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement.">${esc(item.note || "")}</textarea>
@@ -2889,7 +2887,17 @@ function visitHTML() {
 function boxEuro(usd) {
   const rate = fxRates?.USD;
   if (typeof usd !== "number" || typeof rate !== "number" || !(rate > 0)) return null;
-  return usd / rate;
+  return Math.round((usd / rate) * 100) / 100;
+}
+
+function boxPriceHTML(usd) {
+  if (typeof usd !== "number") return `<span class="price-missing">Cote indisponible</span>`;
+  const euro = boxEuro(usd);
+  if (euro == null) {
+    if (fxPromise || usdDisplayMode() === "pending") return `<span class="price-missing">Conversion…</span>`;
+    return `<span class="price-missing">Cote indisponible</span>`;
+  }
+  return `<span class="price">${esc(eur(euro))}</span>`;
 }
 
 function collectionWorth() {
@@ -2949,14 +2957,12 @@ function worthHTML() {
   }
   const unit = boxes ? (missing > 1 ? "pièces" : "pièce") : (missing > 1 ? "cartes" : "carte");
   const hole = missing ? `<span class="deal-note">${missing} ${unit} sans cote.</span>` : "";
-  const wait = pending ? `<span class="deal-note">Conversion des coffrets en cours.</span>` : "";
   return `
     <p class="coll-worth" id="coll-worth">
       <span class="kicker">Valeur indicative</span>
       <strong class="price">${esc(eur(sum))}</strong>
       <span class="deal-note">${esc(note)}</span>
       ${hole}
-      ${wait}
     </p>`;
 }
 
@@ -2983,7 +2989,11 @@ function paintCollectionPrices() {
     const item = boxById(node.dataset.card);
     const line = node.querySelector(".price-line");
     if (!item || !line) return;
-    line.innerHTML = typeof item.usd === "number" ? usdHTML(item.usd) : `<span class="price-missing">Cote indisponible</span>`;
+    line.innerHTML = boxPriceHTML(item.usd);
+    const titre = node.querySelector(".coll-title");
+    if (titre) titre.textContent = item.name;
+    const meta = node.querySelector(".tile-meta");
+    if (meta) meta.textContent = [sealedLabel(item.box), item.setName].filter(Boolean).join(" · ");
   });
 }
 
@@ -3032,7 +3042,7 @@ function collectionHTML() {
   const mine = state.collection;
   const empty = mine.items.length
     ? ""
-    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Ouvre une carte, une ETB ou une UPC, puis ajoute-la à ta collection.</p></div>`;
+    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Depuis une fiche, ajoute une carte, une ETB, un coffret ou une UPC.</p></div>`;
   return `
     <section class="panel">
       <header class="section-head">
@@ -3040,7 +3050,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Tes cartes, tes ETB et tes UPC, un commentaire, une cote en euros. Les coffrets aussi. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
+        <p class="lede">Tes cartes, tes ETB, tes coffrets et tes UPC. Un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -3088,7 +3098,7 @@ async function copyCollectionLink() {
   const status = document.getElementById("coll-status");
   const payload = sharePayload();
   if (!payload) {
-    state.shareNote = "Ajoute une carte, une ETB ou une UPC, ou coche les favoris, avant de copier le lien.";
+    state.shareNote = "Ajoute une carte ou un coffret, ou coche les favoris, avant de copier le lien.";
     if (status) status.textContent = state.shareNote;
     return;
   }
@@ -3695,6 +3705,18 @@ function openProduct(item, family) {
   dialog.dataset.mode = "";
   dialog.dataset.current = "";
   dialog.innerHTML = productHTML(item, family);
+  lockSheet();
+  if (!dialog.open) dialog.showModal();
+}
+
+function coffretIntrouvable() {
+  productOpen = null;
+  const dialog = document.getElementById("fiche");
+  keepFiche();
+  dialog.dataset.mode = "";
+  dialog.dataset.current = "";
+  dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>Ce coffret n'est plus dans le catalogue.</p></div>`;
+  dialog.removeAttribute("aria-busy");
   lockSheet();
   if (!dialog.open) dialog.showModal();
 }
@@ -4526,6 +4548,7 @@ function bind() {
         else if (family === "sealed") loadSealed().then(() => {
           const found = (state.sealed || []).find((row) => String(row.id) === id);
           if (found) openProduct(found, "sealed");
+          else coffretIntrouvable();
         });
       }
       if (action === "sealed-retry") {
