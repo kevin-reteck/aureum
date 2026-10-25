@@ -1678,11 +1678,19 @@ html.is-capture, html.is-capture * , html.is-capture *::backdrop {
     min-width: 0;
     width: 100%;
     margin-left: 0;
-    justify-content: flex-start;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0 2px;
+    justify-content: stretch;
     overflow: visible;
   }
-  .tabs button { margin: 0 8px 0 0; padding: 7px 0 6px; }
+  .tabs button {
+    grid-column: span 3;
+    margin: 0;
+    padding: 7px 2px 6px;
+    text-align: center;
+  }
+  .tabs button:nth-child(n + 5) { grid-column: span 4; }
   .search { width: 100%; }
   .hero { grid-template-columns: 1fr; gap: 8px; padding-top: 16px; }
   .fiche { grid-template-columns: 1fr; }
@@ -1903,17 +1911,12 @@ html.is-capture, html.is-capture * , html.is-capture *::backdrop {
 }
 
 @media (max-width: 520px) {
-  .tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 2px 4px;
-    justify-items: center;
-  }
+  .tabs { gap: 0; }
   .tabs button {
     margin: 0;
     min-height: 44px;
-    padding: 0 2px;
-    font-size: 0.875rem;
+    padding: 0 1px;
+    font-size: clamp(0.74rem, 3.15vw, 0.875rem);
   }
 }
 

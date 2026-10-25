@@ -1,7 +1,7 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=56";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=57";
 
 const CTX_KEY = "aureum.contexte";
-const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
 const COLL_MAX = 30;
 const NOTE_MAX = 140;
 const POCKETS = 9;
@@ -2028,11 +2028,47 @@ function loadBinder() {
 }
 
 function saveBinder() {
-  noterStockage(ecrireCabinet("classeur", {
+  const ok = ecrireCabinet("classeur", {
     page: state.binder.page,
     pages: state.binder.pages,
     cards: state.binder.cards,
-  }));
+  });
+  noterStockage(ok);
+  return ok !== false;
+}
+
+function migrerFavoris() {
+  const favs = state.favorites.filter((item) => item && cleanId(item.id, "") && item.name);
+  if (!favs.length) return;
+  let ajoute = false;
+  favs.forEach((fav) => {
+    const id = cleanId(fav.id, "");
+    if (!id || binderFind(id)) return;
+    let hole = firstHole(0);
+    if (!hole) {
+      state.binder.pages.push(emptyPage());
+      hole = { page: state.binder.pages.length - 1, slot: 0 };
+    }
+    state.binder.pages[hole.page][hole.slot] = id;
+    state.binder.cards[id] = {
+      id,
+      name: fav.name,
+      image: fav.image || "",
+      setName: fav.setName || fav.set?.name || "",
+      localId: fav.localId || "",
+      rarity: fav.rarity || "",
+      variants: variantFlags(fav),
+      setTotal: fav.setTotal || null,
+      trend: typeof fav.trend === "number" ? fav.trend : (typeof fav.pricing?.cardmarket?.trend === "number" ? fav.pricing.cardmarket.trend : null),
+      pricing: fav.pricing || null,
+      lang: MARKETS[fav.lang] ? fav.lang : "fr",
+    };
+    ajoute = true;
+  });
+  if (!favs.every((fav) => binderFind(cleanId(fav.id, "")))) return;
+  if (ajoute && !saveBinder()) return;
+  state.favorites = [];
+  saveFavs();
 }
 
 function binderFind(id) {
@@ -2260,8 +2296,16 @@ function boutonBug() {
   return `<button class="icon-btn signaler" type="button" data-signaler aria-label="Signaler un problème"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 8c0-1.7 1.3-3 3-3s3 1.3 3 3"/><path d="M8 9.5h8"/><ellipse cx="12" cy="14" rx="4.2" ry="5"/><path d="M9.2 6.2 7 3.5M14.8 6.2 17 3.5"/><path d="M8 12 4.5 10.5M8 15H4M8.4 17.8 5.2 20.5"/><path d="M16 12l3.5-1.5M16 15h4M15.6 17.8l3.2 2.7"/></svg></button>`;
 }
 
-function reliefHTML(card, slot) {
+function reliefHTML(card, mode) {
   const kind = foilKind(card);
+  const lang = card.lang || state.market;
+  const found = binderFind(card.id);
+  const garder = found
+    ? `<button class="btn" type="button" data-binder="remove" data-slot="${found.slot}" data-page="${found.page}">Retirer du classeur</button>`
+    : `<button class="btn solid" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(lang)}">Ranger dans le classeur</button>`;
+  const suivante = mode === "random"
+    ? `<button class="btn solid next-card" type="button" data-action="random-next">Suivante</button>`
+    : "";
   return `
     <div class="relief">
       <div class="relief-tools">${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>
@@ -2277,9 +2321,27 @@ function reliefHTML(card, slot) {
         <p class="relief-name">${esc(prettyName(card.name))}</p>
         <p class="hint">${foilHint(kind)}</p>
         <div class="fiche-actions">
-          <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">Voir la fiche</button>
-          <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
+          ${suivante}
+          ${garder}
+          <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(lang)}">Voir la fiche</button>
         </div>
+      </div>
+    </div>`;
+}
+
+function reliefAttente() {
+  return `
+    <div class="relief">
+      <div class="relief-tools">${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>
+      <div class="relief-stage">
+        <div class="stage" data-tilt data-foil="papier" data-art="classic">
+          <span class="shine" aria-hidden="true"></span>
+        </div>
+        <span class="relief-shadow" aria-hidden="true"></span>
+      </div>
+      <div class="relief-copy">
+        <p class="relief-name">Ouverture…</p>
+        <p class="hint">Penche la carte : la lumière suit le mouvement.</p>
       </div>
     </div>`;
 }
@@ -2513,23 +2575,59 @@ function applyReliefFoil(dialog, card) {
   holo.dataset.art = art;
 }
 
-async function refreshReliefFoil(id, lang) {
+function carteConnue(id, lang) {
+  const langue = lang || state.market || "fr";
+  const cached = cache.get(cacheKey(id, langue)) || cache.get(cacheKey(id, state.market)) || cache.get(cacheKey(id, "fr"));
+  if (cached?.name) return cached;
+  const ranger = state.binder.cards[id];
+  if (ranger?.name) return ranger;
+  const lists = [state.iconics, state.setCards, state.searchCards, state.hallCards];
+  for (const list of lists) {
+    const found = (list || []).find((card) => card?.id === id && card.name && (!card.lang || card.lang === langue));
+    if (found) return found;
+  }
+  for (const list of lists) {
+    const found = (list || []).find((card) => card?.id === id && card.name);
+    if (found) return found;
+  }
+  const coll = state.collection.items.find((item) => item.id === id && !item.box && item.name);
+  return coll || null;
+}
+
+async function completerRelief(id, lang) {
+  const dialog = document.getElementById("relief");
   try {
     const full = await getCard(id, lang);
+    if (!dialog?.open || dialog.dataset.card !== id) return;
     const flags = variantFlags(full);
     const current = state.binder.cards[id];
-    if (!current || !flags) return;
-    state.binder.cards[id] = {
-      ...current,
-      rarity: full.rarity || current.rarity || "",
-      variants: flags,
-    };
-    saveBinder();
-    const dialog = document.getElementById("relief");
-    if (dialog?.open && dialog.dataset.card === id) applyReliefFoil(dialog, state.binder.cards[id]);
-    if (state.tab === "classeur") paintBinder();
+    if (current) {
+      state.binder.cards[id] = {
+        ...current,
+        rarity: full.rarity || current.rarity || "",
+        variants: flags || current.variants || null,
+        image: full.image || current.image || "",
+        name: full.name || current.name,
+      };
+      saveBinder();
+      if (state.tab === "classeur") paintBinder();
+    }
+    const card = { ...full, lang: full.lang || lang };
+    const img = dialog.querySelector("[data-tilt] img");
+    if (!img?.getAttribute("src")) {
+      const mode = dialog.dataset.mode === "random" ? "random" : "";
+      dialog.innerHTML = reliefHTML(card, mode);
+      wakeScans(dialog);
+      resetFoilTilt(dialog.querySelector("[data-tilt]"));
+      return;
+    }
+    applyReliefFoil(dialog, card);
+    const name = dialog.querySelector(".relief-name");
+    if (name && card.name) name.textContent = prettyName(card.name);
   } catch {
-    /* Sans TCGdex, la carte reste en lumière papier. */
+    if (!dialog?.open || dialog.dataset.card !== id) return;
+    const name = dialog.querySelector(".relief-name");
+    if (name && name.textContent === "Ouverture…") name.textContent = "Cette carte ne s'ouvre pas.";
   }
 }
 
@@ -2559,20 +2657,34 @@ function leaveRelief(after) {
   }, 240);
 }
 
-function openRelief(id, slot) {
-  const card = state.binder.cards[id];
+function openRelief(id, _slot, lang, mode) {
+  requestFoilMotion();
   const dialog = document.getElementById("relief");
-  if (!card || !dialog) return;
-  if (foilKind(card) !== "papier") requestFoilMotion();
+  const safe = cleanId(id, "");
+  if (!safe || !dialog) return;
+  const langue = lang || state.binder.cards[safe]?.lang || state.market;
+  const modeRelief = mode === "random" ? "random" : "";
+  const fiche = document.getElementById("fiche");
+  if (fiche?.open) fiche.close();
   reliefLeaving = false;
   dialog.classList.remove("is-leaving");
-  dialog.dataset.card = card.id;
-  dialog.innerHTML = reliefHTML(card, slot);
-  wakeScans(dialog);
-  resetFoilTilt(dialog.querySelector("[data-tilt]"));
+  dialog.dataset.card = safe;
+  dialog.dataset.lang = langue;
+  dialog.dataset.mode = modeRelief;
+  const known = carteConnue(safe, langue);
   lockSheet();
+  if (known?.name) {
+    dialog.innerHTML = reliefHTML({ ...known, id: safe, lang: known.lang || langue }, modeRelief);
+    wakeScans(dialog);
+    resetFoilTilt(dialog.querySelector("[data-tilt]"));
+    if (!dialog.open) dialog.showModal();
+    if (!known.image || !variantFlags(known)) completerRelief(safe, langue);
+    return;
+  }
+  dialog.innerHTML = reliefAttente();
+  resetFoilTilt(dialog.querySelector("[data-tilt]"));
   if (!dialog.open) dialog.showModal();
-  if (!variantFlags(card)) refreshReliefFoil(card.id, card.lang || state.market);
+  completerRelief(safe, langue);
 }
 
 let binderTurning = false;
@@ -2985,9 +3097,8 @@ function shareRow(item, withNote) {
 function sharePayload() {
   const mine = state.collection;
   const items = mine.items.map((item) => shareRow(item, true));
-  const favs = mine.shareFavs ? state.favorites.map((item) => shareRow(item, false)) : [];
-  if (!items.length && !favs.length) return null;
-  return { v: 1, n: mine.named ? looseName(mine.name).trim() : "", items, favs };
+  if (!items.length) return null;
+  return { v: 1, n: mine.named ? looseName(mine.name).trim() : "", items, favs: [] };
 }
 
 async function encodeShare(payload) {
@@ -3311,7 +3422,6 @@ function collectionHTML() {
           <input id="coll-name" type="text" maxlength="24" value="${esc(mine.name)}" placeholder="Un prénom suffit" autocomplete="nickname">
         </label>
         <label class="coll-check"><input id="coll-named" type="checkbox" ${mine.named ? "checked" : ""}> Montrer ce nom dans le lien</label>
-        <label class="coll-check"><input id="coll-favs" type="checkbox" ${mine.shareFavs ? "checked" : ""}> Joindre mes favoris au lien</label>
         <button class="btn solid" type="button" data-action="coll-share">Copier le lien</button>
         <p class="note" id="coll-status">${esc(state.shareNote)}</p>
       </form>
@@ -3351,7 +3461,7 @@ async function copyCollectionLink() {
   const status = document.getElementById("coll-status");
   const payload = sharePayload();
   if (!payload) {
-    state.shareNote = "Ajoute une carte ou un coffret, ou coche les favoris, avant de copier le lien.";
+    state.shareNote = "Ajoute une carte ou un coffret avant de copier le lien.";
     if (status) status.textContent = state.shareNote;
     return;
   }
@@ -3414,7 +3524,11 @@ function render() {
     hydrateBinderScans();
   }
   else if (state.tab === "collection") app.innerHTML = collectionHTML();
-  else app.innerHTML = favorisHTML();
+  else {
+    app.innerHTML = binderHTML();
+    hydrateBinderFoils();
+    hydrateBinderScans();
+  }
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
   watchMore();
@@ -3520,6 +3634,9 @@ function risePage() {
 }
 
 function setTab(tab) {
+  if (tab === "favoris") tab = "classeur";
+  const relief = document.getElementById("relief");
+  if (relief?.open) relief.close();
   const changed = TABS.includes(tab) && tab !== state.tab;
   if (tab !== "collection") {
     const url = new URL(location.href);
@@ -3535,7 +3652,6 @@ function setTab(tab) {
   if (changed) risePage();
   window.scrollTo(0, 0);
   if (tab === "extensions") selectSeries(state.browseSeriesId);
-  if (tab === "favoris") refreshFavs();
   if (tab === "collection") {
     hydrateVisit();
     refreshCollection();
@@ -3935,7 +4051,7 @@ function ficheBar() {
 function nextRandomCard() {
   const poolCards = state.setCards.length ? state.setCards : activeCards();
   if (!poolCards.length) return null;
-  const current = document.getElementById("fiche")?.dataset.current || "";
+  const current = document.getElementById("relief")?.dataset.card || document.getElementById("fiche")?.dataset.current || "";
   const others = poolCards.filter((card) => card.id !== current);
   const source = others.length ? others : poolCards;
   return source[Math.floor(Math.random() * source.length)];
@@ -3944,7 +4060,6 @@ function nextRandomCard() {
 function ficheHTML(card) {
   const types = Array.isArray(card.types) ? card.types : [];
   const when = formatDay(card.pricing?.cardmarket?.updated);
-  const favOn = isFav(card.id, card.lang || state.market);
   const collOn = inCollection(card.id, card.lang || state.market);
   return `
     <article class="fiche">
@@ -3976,8 +4091,7 @@ function ficheHTML(card) {
         ${card.illustrator ? `<p class="hint">Illustré par ${esc(card.illustrator)}.</p>` : ""}
         ${Array.isArray(card.dexId) && card.dexId.length ? `<p class="hint">Pokédex n° ${esc(card.dexId.join(", "))}</p>` : ""}
         <div class="fiche-actions">
-          <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
-          <button class="btn" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
+          <button class="btn solid" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
           <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" ${!collOn && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${collOn ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
         </div>
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
@@ -4169,7 +4283,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=56", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=57", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4848,6 +4962,14 @@ function bind() {
       suppressPocketClick = false;
       return;
     }
+    if (binderEl?.dataset.binder === "remove") {
+      const slot = Number(binderEl.dataset.slot);
+      const page = binderEl.dataset.page === undefined || binderEl.dataset.page === ""
+        ? state.binder.page
+        : Number(binderEl.dataset.page);
+      leaveRelief(() => removeSlot(page, slot));
+      return;
+    }
     if (binderEl && state.tab === "classeur") {
       const kind = binderEl.dataset.binder;
       if (kind === "prev") turnBinder(-1);
@@ -4870,11 +4992,6 @@ function bind() {
         }
       }
       if (kind === "place") placeBinderCard(binderEl.dataset.id);
-      if (kind === "remove") {
-        const slot = Number(binderEl.dataset.slot);
-        const page = state.binder.page;
-        leaveRelief(() => removeSlot(page, slot));
-      }
       return;
     }
     if (pocketEl && state.tab === "classeur") {
@@ -4941,11 +5058,15 @@ function bind() {
       if (action === "fav") toggleFav(actionEl.dataset.id, actionEl.dataset.lang || state.market);
       if (action === "binder-add") {
         const lang = actionEl.dataset.lang || state.market;
-        const card = cache.get(cacheKey(actionEl.dataset.id, lang));
-        if (card) {
-          dialog.close();
-          rangerCard(card);
-        }
+        const id = actionEl.dataset.id;
+        const partir = (card) => {
+          if (!card?.id) return;
+          if (dialog.open) dialog.close();
+          leaveRelief(() => rangerCard(card));
+        };
+        const card = cache.get(cacheKey(id, lang)) || carteConnue(id, lang);
+        if (card?.name) partir(card);
+        else getCard(id, lang).then(partir).catch(() => {});
       }
       if (action === "open-fiche") {
         const id = actionEl.dataset.id;
@@ -5021,7 +5142,7 @@ function bind() {
       }
       if (action === "random" || action === "random-next") {
         const pick = nextRandomCard();
-        if (pick) openFiche(pick.id, { mode: "random", lang: langueCarte(pick) });
+        if (pick) openRelief(pick.id, null, langueCarte(pick), "random");
       }
       if (action === "jump") {
         document.getElementById("grille-titre")?.scrollIntoView({ behavior: motionOK ? "smooth" : "auto", block: "start" });
@@ -5052,7 +5173,7 @@ function bind() {
       return;
     }
 
-    if (openEl) openFiche(openEl.dataset.open, { lang: openEl.dataset.lang || state.market });
+    if (openEl) openRelief(openEl.dataset.open, null, openEl.dataset.lang || state.market);
   });
 
   document.addEventListener("change", (event) => {
@@ -5201,6 +5322,7 @@ async function recoverFromMarket(img) {
 
 function initialTab() {
   const hash = location.hash.replace("#", "");
+  if (hash === "favoris") return "classeur";
   return TABS.includes(hash) ? hash : "galerie";
 }
 
@@ -5372,6 +5494,7 @@ function ouvrirJournal() {
 }
 
 function boot() {
+  migrerFavoris();
   ouvrirJournal();
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) ouvrirJournal();
@@ -5385,6 +5508,15 @@ function boot() {
   });
   bind();
   bindSignal();
+  window.addEventListener("hashchange", () => {
+    const hash = location.hash.replace("#", "");
+    if (hash === "favoris") {
+      if (state.tab !== "classeur") setTab("classeur");
+      else rememberTab("classeur");
+      return;
+    }
+    if (TABS.includes(hash) && hash !== state.tab) setTab(hash);
+  });
   chargerCapture().catch(() => {});
   registerServiceWorker();
   const fxReady = activeCurrency() !== "USD" || state.currency !== "EUR" ? loadFx() : Promise.resolve(null);
@@ -5419,7 +5551,6 @@ function boot() {
     if (state.tab === "etb") loadSealed();
     if (state.tab === "univers") loadUnivers();
     updateFavCount();
-    if (state.tab === "favoris") refreshFavs();
     if (state.tab === "collection") {
       hydrateVisit();
       refreshCollection();

@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=56">
+    <link rel="stylesheet" href="styles.css?v=57">
     <style>html,body{background:#0b0a08}</style>
     <script>
       window.aureumErreurs = [];
@@ -31,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "56";
+      const VERSION_PAGE = "57";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -192,9 +192,6 @@
           <button type="button" role="tab" data-tab="etb" aria-selected="false">ETB</button>
           <button type="button" role="tab" data-tab="univers" aria-selected="false">Univers</button>
           <button type="button" role="tab" data-tab="cotes" aria-selected="false">Cotes</button>
-          <button type="button" role="tab" data-tab="favoris" aria-selected="false">
-            Favoris <span id="fav-count" class="badge" hidden>0</span>
-          </button>
           <button type="button" role="tab" data-tab="collection" aria-selected="false">Collection</button>
           <button type="button" role="tab" data-tab="classeur" aria-selected="false">Classeur</button>
         </nav>
@@ -264,6 +261,7 @@
             <li>Le reflet holographique suit le mouvement, sans quadrillage.</li>
             <li>Dans le classeur, glisser vers le haut ou le bas fait défiler la page.</li>
             <li>La salle des cotes se trie du plus cher au moins cher, pour tout mélanger, une génération, ou les ETB.</li>
+            <li>Un clic ouvre la carte en relief, avec le mouvement du téléphone et l'hologramme. Les favoris passent dans le classeur.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -274,7 +272,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=56";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=57";
 
       const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
       const porte = document.getElementById("porte");
@@ -304,7 +302,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=56");
+        import("./app.js?v=57");
       }
 
       function fermerPorte() {
@@ -316,7 +314,7 @@
 
       await preparer();
       if (aDesOrphelins()) {
-        document.getElementById("porte-lede").textContent = "Le premier compte reprend le classeur, les favoris et la collection déjà sur cet appareil.";
+        document.getElementById("porte-lede").textContent = "Le premier compte reprend le classeur et la collection déjà sur cet appareil.";
       }
       montrer(codeForm);
 
