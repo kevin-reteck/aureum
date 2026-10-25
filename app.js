@@ -60,6 +60,7 @@ const state = {
   iconics: [],
   iconicsReady: false,
   favorites: loadFavs(),
+  favSort: "ajout",
   binder: loadBinder(),
   binderSlot: null,
   binderQuery: "",
@@ -418,6 +419,7 @@ function snapshot(card) {
     setName: card.set?.name || "",
     localId: card.localId || "",
     rarity: card.rarity || "",
+    setTotal: setSize(card) || null,
     trend: typeof card.pricing?.cardmarket?.trend === "number" ? card.pricing.cardmarket.trend : null,
     pricing: card.pricing || null,
   };
@@ -832,6 +834,93 @@ function cotesHTML() {
     </section>`;
 }
 
+function setSize(card) {
+  const count = card?.set?.cardCount;
+  const total = count?.official || count?.total;
+  if (typeof total === "number" && total > 0) return total;
+  return typeof card?.setTotal === "number" && card.setTotal > 0 ? card.setTotal : 0;
+}
+
+function collectorNo(card) {
+  const local = String(card?.localId || "").trim();
+  if (!local) return "";
+  if (local.includes("/")) return local;
+  const total = setSize(card);
+  return total ? `${local}/${total}` : local;
+}
+
+function marketQuery(card) {
+  const name = prettyName(card.name);
+  const num = collectorNo(card);
+  if (num.includes("/")) return `${name} ${num}`;
+  const bits = [name];
+  if (card.setName) bits.push(prettyName(card.setName));
+  if (num) bits.push(num);
+  return bits.filter(Boolean).join(" ");
+}
+
+function ebaySearch(card, kind) {
+  const params = new URLSearchParams({
+    _nkw: marketQuery(card),
+    _sop: "15",
+  });
+  if (kind === "achat") params.set("LH_BIN", "1");
+  if (kind === "enchere") params.set("LH_Auction", "1");
+  return `https://www.ebay.fr/sch/i.html?${params}`;
+}
+
+function vintedSearch(card) {
+  const params = new URLSearchParams({
+    search_text: marketQuery(card),
+  });
+  return `https://www.vinted.fr/catalog?${params}`;
+}
+
+function favTrend(card) {
+  const trend = card?.pricing?.cardmarket?.trend;
+  if (typeof trend === "number") return trend;
+  return typeof card?.trend === "number" ? card.trend : null;
+}
+
+function dealGap(card) {
+  const avg30 = card?.pricing?.cardmarket?.avg30;
+  const trend = favTrend(card);
+  if (trend == null || typeof avg30 !== "number" || avg30 <= 0) return null;
+  return (avg30 - trend) / avg30;
+}
+
+function orderedFavs() {
+  const list = state.favorites.slice();
+  if (state.favSort === "cote") list.sort((a, b) => (favTrend(b) ?? -1) - (favTrend(a) ?? -1));
+  else if (state.favSort === "affaires") list.sort((a, b) => (dealGap(b) ?? -2) - (dealGap(a) ?? -2));
+  return list;
+}
+
+function dealLine(card) {
+  const gap = dealGap(card);
+  if (gap == null) return `<p class="deal-note">Pas assez d'historique pour comparer la cote.</p>`;
+  const pct = Math.round(Math.abs(gap) * 100);
+  if (gap >= 0.08) return `<p class="deal-note down">Cote ${pct} % sous la moyenne 30 j.</p>`;
+  if (gap <= -0.08) return `<p class="deal-note up">Cote ${pct} % au-dessus de la moyenne 30 j.</p>`;
+  return `<p class="deal-note">Cote proche de la moyenne 30 j.</p>`;
+}
+
+function marketLinks(card) {
+  const query = marketQuery(card);
+  const links = [
+    ["eBay · achat immédiat", ebaySearch(card, "achat")],
+    ["eBay · enchères", ebaySearch(card, "enchere")],
+    ["Vinted", vintedSearch(card)],
+  ];
+  return `<div class="market-links">${links.map(([label, href]) => `
+    <a href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Recherche : ${esc(query)}">${label}</a>`).join("")}</div>`;
+}
+
+function favSortButton(id, label) {
+  const on = state.favSort === id;
+  return `<button class="fav-sort-btn" type="button" data-action="fav-sort" data-sort="${id}" aria-pressed="${on ? "true" : "false"}">${label}</button>`;
+}
+
 function favorisHTML() {
   if (!state.favorites.length) {
     return `
@@ -849,9 +938,15 @@ function favorisHTML() {
           <p class="kicker">Cabinet</p>
           <h2>Favoris</h2>
         </div>
-        <p class="lede">Les cartes épinglées restent dans ce navigateur.</p>
+        <p class="lede">Les cartes épinglées restent dans ce navigateur. eBay s'ouvre trié du moins cher au plus cher. Vinted s'ouvre sur les annonces les plus proches de la carte.</p>
       </header>
-      <div class="grid fav-grid">${state.favorites.map((card) => `
+      <div class="fav-sort" role="group" aria-label="Trier les favoris">
+        ${favSortButton("affaires", "Meilleures affaires")}
+        ${favSortButton("cote", "Cote")}
+        ${favSortButton("ajout", "Ordre d'ajout")}
+      </div>
+      <p class="note">Meilleure affaire : la plus forte baisse de la cote face à la moyenne des 30 derniers jours.</p>
+      <div class="grid fav-grid">${orderedFavs().map((card) => `
         <article class="tile" data-card="${esc(card.id)}">
           <button class="tile-hit" type="button" data-open="${esc(card.id)}">
             <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
@@ -859,6 +954,8 @@ function favorisHTML() {
             <span class="tile-meta" data-slot="meta">${esc(metaLine({ ...card, set: { name: card.setName } }))}</span>
             <span class="price-line" data-slot="price">${card.pricing || typeof card.trend === "number" ? priceHTML(card.pricing ? card : { pricing: { cardmarket: { trend: card.trend } } }) : `<span class="price-missing">Cote indisponible</span>`}</span>
           </button>
+          ${dealLine(card)}
+          ${marketLinks(card)}
           <button class="btn unfav" type="button" data-action="unfav" data-id="${esc(card.id)}">Retirer</button>
         </article>`).join("")}</div>
     </section>`;
@@ -1741,6 +1838,8 @@ async function refreshFavs() {
       /* Le favori reste affiché avec sa dernière cote. */
     }
   });
+  if (token !== favEpoch) return;
+  if (state.tab === "favoris") render();
 }
 
 function labelVariant(variant) {
@@ -2192,6 +2291,10 @@ function bind() {
       if (action === "open-fiche") {
         document.getElementById("relief")?.close();
         openFiche(actionEl.dataset.id);
+      }
+      if (action === "fav-sort") {
+        state.favSort = actionEl.dataset.sort || "ajout";
+        render();
       }
       if (action === "unfav") {
         state.favorites = state.favorites.filter((item) => item.id !== actionEl.dataset.id);
