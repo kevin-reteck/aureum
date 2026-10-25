@@ -214,6 +214,7 @@ function eur(amount) {
 let fxRates = null;
 let fxPromise = null;
 let marketToken = 0;
+let productOpen = null;
 
 function saveMarket() {
   localStorage.setItem(MARKET_KEY, JSON.stringify({ market: state.market, currency: state.currency }));
@@ -319,9 +320,96 @@ function priceHTML(card) {
   return `<span class="price">${esc(money(amount))}</span>${move}`;
 }
 
+function usdDisplayMode() {
+  const code = activeCurrency();
+  if (code === "USD") return "usd";
+  const usdRate = fxRates?.USD;
+  if (typeof usdRate !== "number" || !(usdRate > 0)) return fxPromise ? "pending" : "unavailable";
+  if (code === "EUR") return "converted";
+  const rate = fxRates?.[code];
+  if (typeof rate !== "number") return fxPromise ? "pending" : "unavailable";
+  return "converted";
+}
+
+function usdConvertedAmount(amount) {
+  const code = activeCurrency();
+  const usdRate = fxRates.USD;
+  if (code === "EUR") return amount / usdRate;
+  return (amount / usdRate) * fxRates[code];
+}
+
+function formatMoney(amount, code) {
+  if (code === "EUR") return eurFmt.format(amount);
+  if (code === "USD") return usdFmt.format(amount);
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: code }).format(amount);
+}
+
+function usdPlain(amount) {
+  if (typeof amount !== "number") return "";
+  const mode = usdDisplayMode();
+  if (mode === "pending") return "Conversion…";
+  if (mode !== "converted") return usdFmt.format(amount);
+  return formatMoney(usdConvertedAmount(amount), activeCurrency());
+}
+
 function usdHTML(amount) {
   if (typeof amount !== "number") return `<span class="price-missing">Cote indisponible</span>`;
-  return `<span class="price">${esc(usdFmt.format(amount))}</span>`;
+  const mode = usdDisplayMode();
+  if (mode === "pending") return `<span class="price-missing">Conversion…</span>`;
+  return `<span class="price">${esc(usdPlain(amount))}</span>`;
+}
+
+function tcgplayerNote(when) {
+  const dated = when ? ` Relevée le ${when}.` : "";
+  const mode = usdDisplayMode();
+  if (mode === "pending") return `Cote TCGPlayer en dollars.${dated} Conversion en cours. Pas une offre.`;
+  if (mode === "unavailable") return `Cote TCGPlayer en dollars.${dated} La conversion est indisponible. Pas une offre.`;
+  if (mode === "converted") {
+    const word = activeCurrency() === "JPY" ? "yens" : "euros";
+    return `Cote TCGPlayer en dollars.${dated} Affichée en ${word} après conversion, pas une cote Cardmarket. Pas une offre.`;
+  }
+  return `Cote TCGPlayer en dollars.${dated} Pas une offre.`;
+}
+
+function sealedFxTail() {
+  const mode = usdDisplayMode();
+  if (mode === "pending") return " Conversion en cours.";
+  if (mode === "unavailable") return " La conversion est indisponible.";
+  if (mode !== "converted") return "";
+  const word = activeCurrency() === "JPY" ? "yens" : "euros";
+  return ` Affichées en ${word} après conversion, pas une cote Cardmarket.`;
+}
+
+function paintOpenProduct() {
+  if (!productOpen) return;
+  const dialog = document.getElementById("fiche");
+  if (!dialog?.open) {
+    productOpen = null;
+    return;
+  }
+  const list = productOpen.family === "univers" ? state.univers : state.sealed;
+  const item = (list || []).find((row) => String(row.id) === productOpen.id);
+  if (!item) return;
+  dialog.innerHTML = productHTML(item, productOpen.family);
+}
+
+function repaintUsdTab() {
+  if (state.tab === "etb") {
+    if (document.getElementById("sealed-grid")) paintSealed();
+    else render();
+  } else if (state.tab === "univers") {
+    if (document.getElementById("univers-grid")) paintUnivers();
+    else render();
+  }
+  paintOpenProduct();
+}
+
+function settleUsdFx(tab) {
+  if (activeCurrency() === "USD" || usdDisplayMode() === "converted") return;
+  loadFx().then(() => {
+    if (tab && state.tab !== tab) return;
+    repaintUsdTab();
+  });
 }
 
 function localNum(card) {
@@ -1309,7 +1397,7 @@ function sealedStatus() {
   const shown = Math.min(state.sealedPage * PAGE_SIZE, total);
   const when = formatDay(state.sealedAsOf ? `${state.sealedAsOf}T12:00:00` : "");
   const date = when ? `, relevées le ${when}` : "";
-  return `${shown} sur ${total}. Cotes TCGPlayer en dollars${date}.`;
+  return `${shown} sur ${total}. Cotes TCGPlayer en dollars${date}.${sealedFxTail()}`;
 }
 
 function sealedTiles() {
@@ -1477,7 +1565,17 @@ function universStatus() {
   const total = universRows().length;
   if (!total) return "Aucun résultat pour ce filtre.";
   const shown = Math.min(state.universPage * PAGE_SIZE, total);
-  return `${shown} sur ${total}. Les boosters sont cotés en dollars TCGPlayer. Le reste est recensé sans cote unitaire.`;
+  const mode = usdDisplayMode();
+  let boosters = "Les boosters sont cotés en dollars TCGPlayer.";
+  if (mode === "converted") {
+    const word = activeCurrency() === "JPY" ? "yens" : "euros";
+    boosters = `Les boosters sont cotés en dollars TCGPlayer, affichés en ${word} après conversion, pas une cote Cardmarket.`;
+  } else if (mode === "pending") {
+    boosters = "Les boosters sont cotés en dollars TCGPlayer. Conversion en cours.";
+  } else if (mode === "unavailable") {
+    boosters = "Les boosters sont cotés en dollars TCGPlayer. La conversion est indisponible.";
+  }
+  return `${shown} sur ${total}. ${boosters} Le reste est recensé sans cote unitaire.`;
 }
 
 function universTiles() {
@@ -1757,11 +1855,39 @@ function reliefHTML(card, slot) {
     </div>`;
 }
 
+let sheetScrollY = 0;
+
+function lockSheet() {
+  if (document.body.classList.contains("sheet-open")) return;
+  sheetScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.style.top = `-${sheetScrollY}px`;
+  document.body.classList.add("sheet-open");
+}
+
+function unlockSheet() {
+  if (document.getElementById("fiche")?.open || document.getElementById("relief")?.open) return;
+  if (!document.body.classList.contains("sheet-open")) return;
+  const y = sheetScrollY;
+  document.body.classList.remove("sheet-open");
+  document.body.style.top = "";
+  const jump = () => {
+    if (document.body.classList.contains("sheet-open")) return;
+    const root = document.documentElement;
+    const previous = root.style.scrollBehavior;
+    root.style.scrollBehavior = "auto";
+    window.scrollTo(0, y);
+    root.style.scrollBehavior = previous;
+  };
+  jump();
+  requestAnimationFrame(jump);
+}
+
 function openRelief(id, slot) {
   const card = state.binder.cards[id];
   const dialog = document.getElementById("relief");
   if (!card || !dialog) return;
   dialog.innerHTML = reliefHTML(card, slot);
+  lockSheet();
   if (!dialog.open) dialog.showModal();
 }
 
@@ -2361,6 +2487,7 @@ function setTab(tab) {
       history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
   }
+  if ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD") loadFx();
   rememberTab(tab);
   render();
   window.scrollTo(0, 0);
@@ -2370,8 +2497,14 @@ function setTab(tab) {
     hydrateVisit();
     refreshCollection();
   }
-  if (tab === "etb") loadSealed();
-  if (tab === "univers") loadUnivers();
+  if (tab === "etb") {
+    loadSealed();
+    settleUsdFx("etb");
+  }
+  if (tab === "univers") {
+    loadUnivers();
+    settleUsdFx("univers");
+  }
   if (tab === "cotes") loadHall();
 }
 
@@ -2795,10 +2928,10 @@ function productHTML(item, family) {
   const art = shot
     ? `<img src="${esc(shot)}" alt="${esc(item.name)}">`
     : `<span class="monogram">${esc(initials(item.name))}</span>`;
-  const when = family === "sealed" ? formatDay(state.sealedAsOf ? `${state.sealedAsOf}T12:00:00` : "") : "";
-  const dated = when ? ` Relevée le ${when}.` : "";
+  const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
+  const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
   const note = typeof item.usd === "number"
-    ? `Cote TCGPlayer en dollars.${dated} Pas une offre.`
+    ? tcgplayerNote(when)
     : "Pas de cote unitaire pour cette ligne.";
   return `
     <article class="fiche">
@@ -2809,21 +2942,24 @@ function productHTML(item, family) {
       <div class="fiche-body">
         <p class="kicker">${esc(bits.join(" · "))}</p>
         <h2>${esc(item.name)}</h2>
-        ${typeof item.usd === "number" ? `<p class="cote-price">${esc(usdFmt.format(item.usd))}</p>` : ""}
+        ${typeof item.usd === "number" ? `<p class="cote-price">${esc(usdPlain(item.usd))}</p>` : ""}
         <p class="note">${esc(note)}</p>
       </div>
     </article>`;
 }
 
 function openProduct(item, family) {
+  productOpen = { id: String(item.id), family };
   const dialog = document.getElementById("fiche");
   dialog.dataset.mode = "";
   dialog.dataset.current = "";
   dialog.innerHTML = productHTML(item, family);
+  lockSheet();
   if (!dialog.open) dialog.showModal();
 }
 
 async function openFiche(id, modeOrOpts) {
+  productOpen = null;
   const opts = typeof modeOrOpts === "string" ? { mode: modeOrOpts } : (modeOrOpts || {});
   const lang = opts.lang || state.market;
   const safe = cleanId(id, "");
@@ -2833,6 +2969,7 @@ async function openFiche(id, modeOrOpts) {
   dialog.dataset.lang = lang;
   dialog.dataset.mode = opts.mode === "random" ? "random" : "";
   if (!dialog.open) dialog.innerHTML = fichePending();
+  lockSheet();
   if (!dialog.open) dialog.showModal();
   try {
     const card = await getCard(safe, lang);
@@ -2865,6 +3002,9 @@ function bind() {
   const input = document.getElementById("q");
   const clear = document.getElementById("clear-q");
   const dialog = document.getElementById("fiche");
+  dialog.addEventListener("close", () => {
+    productOpen = null;
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2946,6 +3086,8 @@ function bind() {
   });
 
   const relief = document.getElementById("relief");
+  dialog.addEventListener("close", unlockSheet);
+  relief?.addEventListener("close", unlockSheet);
   relief?.addEventListener("click", (event) => {
     if (event.target === relief) relief.close();
   });
@@ -3070,7 +3212,10 @@ function bind() {
 
     if (actionEl) {
       const action = actionEl.dataset.action;
-      if (action === "close") actionEl.closest("dialog")?.close();
+      if (action === "close") {
+        actionEl.closest("dialog")?.close();
+        unlockSheet();
+      }
       if (action === "retry") {
         if (state.view === "search") runSearch(state.query);
         else loadSet(state.gallerySeriesId, state.setId);
@@ -3191,9 +3336,24 @@ function bind() {
       state.currency = event.target.value === local ? local : "EUR";
       if (state.market === "fr") state.currency = "EUR";
       saveMarket();
-      const paint = () => render();
-      if (state.currency !== "EUR") loadFx().then(paint);
-      else paint();
+      const paint = () => {
+        render();
+        paintOpenProduct();
+      };
+      const code = activeCurrency();
+      const cardsNeedFx = code !== "EUR" && typeof fxRates?.[code] !== "number";
+      if (cardsNeedFx) {
+        loadFx().then(paint);
+        return;
+      }
+      if (code !== "USD" && usdDisplayMode() !== "converted") loadFx();
+      paint();
+      if (code !== "USD" && usdDisplayMode() !== "converted") {
+        loadFx().then(() => {
+          if (state.tab === "etb" || state.tab === "univers") repaintUsdTab();
+          else paintOpenProduct();
+        });
+      }
     }
     if (event.target.id === "set-select") {
       clearTimeout(searchTimer);
@@ -3351,13 +3511,23 @@ function applyMarket(lang) {
   state.browseSets = [];
   clearQueryBox();
   render();
-  if (state.currency !== "EUR") loadFx().then(() => { if (state.market === lang) render(); });
+  const wanted = lang;
+  loadFx().then(() => {
+    if (state.market !== wanted) return;
+    if (state.currency !== "EUR" || state.tab === "etb" || state.tab === "univers") {
+      render();
+      paintOpenProduct();
+    } else {
+      paintOpenProduct();
+    }
+  });
   openDefaultSet();
 }
 
 function boot() {
   bind();
   registerServiceWorker();
+  const fxReady = activeCurrency() !== "USD" || state.currency !== "EUR" ? loadFx() : Promise.resolve(null);
   const context = readContext();
   if ((context.market || "fr") === state.market) {
     state.gallerySeriesId = context.seriesId;
@@ -3385,6 +3555,7 @@ function boot() {
     const tab = state.visit ? "collection" : initialTab();
     rememberTab(tab);
     render();
+    if ((state.tab === "etb" || state.tab === "univers") && activeCurrency() !== "USD") loadFx();
     if (state.tab === "etb") loadSealed();
     if (state.tab === "univers") loadUnivers();
     updateFavCount();
@@ -3394,7 +3565,11 @@ function boot() {
       refreshCollection();
     }
     if (state.tab === "cotes") loadHall();
-    if (state.currency !== "EUR") loadFx().then(() => { if (state.tab === "galerie" || state.tab === "cotes") render(); });
+    fxReady.then(() => {
+      if (state.tab === "etb" || state.tab === "univers") repaintUsdTab();
+      else if (activeCurrency() !== "EUR" && (state.tab === "galerie" || state.tab === "cotes")) render();
+      paintOpenProduct();
+    });
     if (state.setId) {
       fetchJSON("/series")
         .then((list) => {
