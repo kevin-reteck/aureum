@@ -513,6 +513,10 @@ function wakeScans(root = document) {
       img.classList.remove("is-trying", "is-broken");
       return;
     }
+    if (img.classList.contains("shot")) {
+      img.classList.remove("is-trying");
+      return;
+    }
     if (!img.complete || img.dataset.woken === "1") return;
     img.dataset.woken = "1";
     img.classList.remove("is-trying");
@@ -1578,6 +1582,16 @@ function universStatus() {
   return `${shown} sur ${total}. ${boosters} Le reste est recensé sans cote unitaire.`;
 }
 
+function universFace(item) {
+  const label = esc(universLabel(item.kind));
+  if (/^\d+$/.test(String(item.id))) {
+    const src = `https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg`;
+    return `<span class="art is-box" data-label="${label}"><img class="shot" src="${src}" alt="" decoding="async"></span>`;
+  }
+  const mark = esc(initials(item.name));
+  return `<span class="art is-box" data-label="${label}"><span class="monogram">${mark}</span></span>`;
+}
+
 function universTiles() {
   const rows = universRows().slice(0, state.universPage * PAGE_SIZE);
   if (!rows.length) return `<p class="note">Aucun résultat pour ce filtre.</p>`;
@@ -1587,13 +1601,10 @@ function universTiles() {
     const day = releasedLabel(item.released);
     if (day) bits.push(day);
     const price = usdHTML(item.usd);
-    const art = /^\d+$/.test(String(item.id))
-      ? `<img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" decoding="async">`
-      : `<span class="monogram" data-label="${esc(initials(item.name))}">${esc(initials(item.name))}</span>`;
     return `
-      <article class="tile">
+      <article class="tile univers-tile">
+        ${universFace(item)}
         <button class="tile-hit" type="button" data-action="product" data-family="univers" data-id="${esc(item.id)}">
-          <span class="art is-box" data-label="${esc(universLabel(item.kind))}">${art}</span>
           <span class="tile-name">${esc(item.name)}</span>
           <span class="tile-meta">${esc(bits.join(" · "))}</span>
           <span class="price-line">${price}</span>
@@ -2911,7 +2922,7 @@ function ficheHTML(card) {
 }
 
 function fichePending() {
-  return `<div class="pending">${ficheBar()}Ouverture de la fiche…</div>`;
+  return `<div class="pending">${ficheBar()}<div class="pending-body" role="status"><span class="mark lg" aria-hidden="true"></span><p>Ouverture de la fiche…</p></div></div>`;
 }
 
 function productHTML(item, family) {
@@ -2926,7 +2937,7 @@ function productHTML(item, family) {
     ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg`
     : "";
   const art = shot
-    ? `<img src="${esc(shot)}" alt="${esc(item.name)}">`
+    ? `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}">`
     : `<span class="monogram">${esc(initials(item.name))}</span>`;
   const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
   const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
@@ -2968,17 +2979,20 @@ async function openFiche(id, modeOrOpts) {
   dialog.dataset.current = safe;
   dialog.dataset.lang = lang;
   dialog.dataset.mode = opts.mode === "random" ? "random" : "";
-  if (!dialog.open) dialog.innerHTML = fichePending();
+  dialog.setAttribute("aria-busy", "true");
+  dialog.innerHTML = fichePending();
   lockSheet();
   if (!dialog.open) dialog.showModal();
   try {
     const card = await getCard(safe, lang);
     if (dialog.dataset.current !== safe) return;
     dialog.innerHTML = ficheHTML(card);
+    dialog.removeAttribute("aria-busy");
     touchFav(card);
   } catch {
     if (dialog.dataset.current !== safe) return;
     dialog.innerHTML = `<div class="fiche-error">${ficheBar()}<p>Impossible d'ouvrir cette fiche.</p></div>`;
+    dialog.removeAttribute("aria-busy");
   }
 }
 
@@ -3414,6 +3428,11 @@ function bind() {
   document.addEventListener("error", (event) => {
     const img = event.target;
     if (!(img instanceof HTMLImageElement)) return;
+    if (img.classList.contains("shot")) {
+      if (img.naturalWidth > 0) img.classList.remove("is-trying", "is-broken");
+      else markBroken(img);
+      return;
+    }
     img.classList.add("is-trying");
     if (img.dataset.probing === "1") return;
     img.dataset.probing = "1";
