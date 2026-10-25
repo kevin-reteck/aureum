@@ -227,6 +227,51 @@ function marketArt(card, quality) {
   return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_in_${px}x${px}.jpg`;
 }
 
+function markBroken(img) {
+  img.dataset.probing = "";
+  img.classList.remove("is-trying");
+  img.classList.add("is-broken");
+}
+
+function showScan(img, src) {
+  img.dataset.probing = "";
+  img.dataset.fallbacks = "";
+  img.classList.remove("is-broken");
+  img.classList.add("is-trying");
+  if (img.getAttribute("src") !== src) img.src = src;
+  else img.classList.remove("is-trying");
+}
+
+function probeScans(img, urls) {
+  const next = urls.find((url) => url && url !== img.getAttribute("src"));
+  if (!next) {
+    if (img.dataset.id && img.dataset.market !== "1") {
+      img.dataset.market = "1";
+      recoverFromMarket(img);
+      return;
+    }
+    markBroken(img);
+    return;
+  }
+  const probe = new Image();
+  probe.onload = () => showScan(img, next);
+  probe.onerror = () => probeScans(img, urls.filter((url) => url !== next));
+  probe.src = next;
+}
+
+function rescueBlankScan(img, card) {
+  if (img.dataset.probing === "1" || img.dataset.market === "1") return;
+  const src = img.getAttribute("src") || "";
+  if (!src || src.includes("tcgplayer-cdn")) return;
+  const dead = img.classList.contains("is-trying") || img.classList.contains("is-broken") || (img.complete && img.naturalWidth === 0);
+  if (!dead) return;
+  const market = marketArt(card, img.dataset.quality === "high" ? "high" : "low");
+  if (!market || market === src) return;
+  img.dataset.market = "1";
+  img.dataset.fallbacks = "";
+  showScan(img, market);
+}
+
 function imgTag(card, size, eager) {
   const urls = artCandidates(card.image, size);
   const edition = editionArt(card, size === "high" ? "high" : "low");
@@ -435,14 +480,18 @@ function patchCard(full) {
       slot.innerHTML = priceHTML(full);
     }
     const img = node.querySelector("img");
-    const edition = editionArt(full, "low");
+    const quality = img?.dataset.quality === "high" ? "high" : "low";
+    const edition = editionArt(full, quality);
     if (img && edition && img.getAttribute("src") !== edition && !String(img.getAttribute("src") || "").includes("tcgplayer-cdn")) {
-      img.dataset.fallbacks = artCandidates(full.image, "low").join("|");
+      img.dataset.fallbacks = artCandidates(full.image, quality).join("|");
       img.dataset.market = "";
+      img.dataset.probing = "";
       img.classList.remove("is-broken", "is-trying");
       img.src = edition;
-    } else if (img && safeArt(full.image, "low") && !img.getAttribute("src")) {
-      img.src = safeArt(full.image, "low");
+    } else if (img && safeArt(full.image, quality) && !img.getAttribute("src")) {
+      img.src = safeArt(full.image, quality);
+    } else if (img && marketArt(full, quality)) {
+      rescueBlankScan(img, full);
     }
     const meta = node.querySelector("[data-slot='meta']");
     if (meta) meta.textContent = metaLine(full);
@@ -1747,21 +1796,10 @@ function bind() {
     const img = event.target;
     if (!(img instanceof HTMLImageElement)) return;
     img.classList.add("is-trying");
+    if (img.dataset.probing === "1") return;
+    img.dataset.probing = "1";
     const queue = (img.dataset.fallbacks || "").split("|").filter(Boolean);
-    while (queue.length) {
-      const next = queue.shift();
-      img.dataset.fallbacks = queue.join("|");
-      if (next && next !== img.getAttribute("src")) {
-        img.src = next;
-        return;
-      }
-    }
-    if (img.dataset.id && img.dataset.market !== "1") {
-      img.dataset.market = "1";
-      recoverFromMarket(img);
-      return;
-    }
-    img.classList.add("is-broken");
+    probeScans(img, queue);
   }, true);
 }
 
@@ -1769,13 +1807,14 @@ async function recoverFromMarket(img) {
   try {
     const card = await getCard(img.dataset.id);
     const src = marketArt(card, img.dataset.quality === "high" ? "high" : "low");
-    if (!src || src === img.src) {
-      img.classList.add("is-broken");
+    img.dataset.probing = "";
+    if (!src || src === img.getAttribute("src")) {
+      markBroken(img);
       return;
     }
-    img.src = src;
+    showScan(img, src);
   } catch {
-    img.classList.add("is-broken");
+    markBroken(img);
   }
 }
 
