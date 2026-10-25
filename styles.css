@@ -421,6 +421,7 @@ select {
   padding: 10px 34px 10px 12px;
   min-width: 180px;
 }
+select:disabled { opacity: 0.72; }
 
 .section-head { margin: 8px 0 16px; }
 .section-head .lede { margin: 8px 0 0; }

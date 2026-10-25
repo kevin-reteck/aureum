@@ -1,4 +1,3 @@
-const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
 const CTX_KEY = "aureum.contexte";
 const FREE_FAVS = 3;
@@ -18,7 +17,17 @@ const HALL_IDS = [
 ];
 const DEAR_EUR = 200;
 const INVITE_KEY = "aureum.invite";
-const SERIES_ORDER = ["me", "sv", "swsh", "sm", "xy", "bw", "hgss", "dp", "pl", "col", "pop", "ex", "neo", "ecard", "base", "tcgp", "mc", "tk", "misc"];
+const SERIES_ORDER = ["me", "sv", "swsh", "sm", "xy", "bw", "hgss", "dp", "pl", "col", "pop", "ex", "neo", "ecard", "lc", "gym", "base", "tcgp", "mc", "tk", "misc", "PMCG", "VS", "web", "e", "ADV", "PCG", "L", "XYb", "SM", "S", "M", "SV"];
+const MARKETS = {
+  fr: { label: "France", currency: "EUR", currencyLabel: "Euros" },
+  en: { label: "Anglais", currency: "USD", currencyLabel: "Dollars" },
+  ja: { label: "Japonais", currency: "JPY", currencyLabel: "Yens" },
+  de: { label: "Allemand", currency: "EUR", currencyLabel: "Euros" },
+  es: { label: "Espagnol", currency: "EUR", currencyLabel: "Euros" },
+  it: { label: "Italien", currency: "EUR", currencyLabel: "Euros" },
+  pt: { label: "Portugais", currency: "EUR", currencyLabel: "Euros" },
+};
+const MARKET_KEY = "aureum.marche";
 
 const TYPE_COLOR = {
   Feu: "#e07a45",
@@ -35,6 +44,64 @@ const TYPE_COLOR = {
   Dragon: "#8d86c4",
   Fée: "#e4a8c6",
   Incolore: "#c9c1b4",
+  Colorless: "#c9c1b4",
+  Grass: "#7da86a",
+  Fire: "#e07a45",
+  Water: "#67aed4",
+  Psychic: "#c58bb8",
+  Fighting: "#c4845a",
+  Darkness: "#8b7eaa",
+  Metal: "#aeb6bd",
+  Dragon: "#8d86c4",
+  Fairy: "#e4a8c6",
+  Pflanze: "#7da86a",
+  Feuer: "#e07a45",
+  Wasser: "#67aed4",
+  Elektro: "#e2c15a",
+  Psycho: "#c58bb8",
+  Kampf: "#c4845a",
+  Finsternis: "#8b7eaa",
+  Metall: "#aeb6bd",
+  Drache: "#8d86c4",
+  Fee: "#e4a8c6",
+  Farblos: "#c9c1b4",
+  Planta: "#7da86a",
+  Fuego: "#e07a45",
+  Agua: "#67aed4",
+  Rayo: "#e2c15a",
+  Psíquico: "#c58bb8",
+  Lucha: "#c4845a",
+  Oscuridad: "#8b7eaa",
+  Dragón: "#8d86c4",
+  Hada: "#e4a8c6",
+  Incoloro: "#c9c1b4",
+  Erba: "#7da86a",
+  Fuoco: "#e07a45",
+  Acqua: "#67aed4",
+  Lampo: "#e2c15a",
+  Psico: "#c58bb8",
+  Lotta: "#c4845a",
+  Oscurità: "#8b7eaa",
+  Metallo: "#aeb6bd",
+  Drago: "#8d86c4",
+  Folletto: "#e4a8c6",
+  Incolore: "#c9c1b4",
+  Fogo: "#e07a45",
+  Água: "#67aed4",
+  Raio: "#e2c15a",
+  Escuridão: "#8b7eaa",
+  Dragão: "#8d86c4",
+  Fada: "#e4a8c6",
+  "草": "#7da86a",
+  "炎": "#e07a45",
+  "水": "#67aed4",
+  "雷": "#e2c15a",
+  "超": "#c58bb8",
+  "闘": "#c4845a",
+  "悪": "#8b7eaa",
+  "鋼": "#aeb6bd",
+  "竜": "#8d86c4",
+  "無色": "#c9c1b4",
 };
 
 const eurFmt = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
@@ -53,6 +120,20 @@ let hallEpoch = 0;
 let quoteToken = 0;
 let searchTimer = 0;
 const motionOK = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function loadMarket() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MARKET_KEY) || "{}");
+    const market = MARKETS[raw.market] ? raw.market : "fr";
+    const local = MARKETS[market].currency;
+    const currency = market === "fr" || local === "EUR" ? "EUR" : (raw.currency === local || raw.currency === "EUR" ? raw.currency : local);
+    return { market, currency };
+  } catch {
+    return { market: "fr", currency: "EUR" };
+  }
+}
+
+const savedMarket = loadMarket();
 
 const state = {
   tab: "galerie",
@@ -109,6 +190,8 @@ const state = {
   universSort: "ancien",
   universQuery: "",
   universPage: 1,
+  market: savedMarket.market,
+  currency: savedMarket.currency,
 };
 
 function esc(value) {
@@ -131,6 +214,71 @@ function cleanId(value, fallback) {
 
 function eur(amount) {
   return eurFmt.format(amount);
+}
+
+let fxRates = null;
+let fxPromise = null;
+let marketToken = 0;
+
+function saveMarket() {
+  localStorage.setItem(MARKET_KEY, JSON.stringify({ market: state.market, currency: state.currency }));
+}
+
+function marketCurrency() {
+  return MARKETS[state.market]?.currency || "EUR";
+}
+
+function activeCurrency() {
+  if (state.market === "fr" || marketCurrency() === "EUR") return "EUR";
+  return state.currency === marketCurrency() ? marketCurrency() : "EUR";
+}
+
+function loadFx() {
+  if (fxRates && typeof fxRates.USD === "number" && typeof fxRates.JPY === "number") return Promise.resolve(fxRates);
+  if (!fxPromise) {
+    fxPromise = fetch("https://api.frankfurter.dev/v1/latest?from=EUR&to=USD,JPY")
+      .then((response) => {
+        if (!response.ok) throw new Error("fx");
+        return response.json();
+      })
+      .then((data) => {
+        fxRates = data?.rates || {};
+        return fxRates;
+      })
+      .catch(() => {
+        fxPromise = null;
+        return {};
+      });
+  }
+  return fxPromise;
+}
+
+function money(amount) {
+  const code = activeCurrency();
+  const rate = code === "EUR" ? 1 : fxRates?.[code];
+  if (code === "EUR" || typeof rate !== "number") return eur(amount);
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: code }).format(amount * rate);
+}
+
+function moneyIsConverted() {
+  const code = activeCurrency();
+  return code !== "EUR" && typeof fxRates?.[code] === "number";
+}
+
+function priceModeNote() {
+  if (state.market === "fr") return "";
+  if (activeCurrency() === "EUR") return "Cote Cardmarket en euros.";
+  const word = state.market === "ja" ? "yens" : "dollars";
+  if (moneyIsConverted()) return `Environ, converti depuis la cote Cardmarket en euros. Pas une cote en ${word}.`;
+  return "La conversion est indisponible. La cote reste en euros.";
+}
+
+function cacheKey(id, lang = state.market) {
+  return `${lang || "fr"}:${id}`;
+}
+
+function apiRoot(lang = state.market) {
+  return `https://api.tcgdex.net/v2/${lang || "fr"}`;
 }
 
 function formatDay(iso) {
@@ -182,7 +330,7 @@ function priceHTML(card, options = {}) {
   const move = delta
     ? `<span class="delta ${delta.dir}">${esc(formatPct(delta.pct))}<span class="delta-hint"> vs 30 j</span></span>`
     : "";
-  return `<span class="price">${esc(eur(amount))}</span>${move}`;
+  return `<span class="price">${esc(money(amount))}</span>${move}`;
 }
 
 function usdHTML(amount) {
@@ -332,15 +480,16 @@ function imgTag(card, size, eager) {
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
   const loading = eager ? `fetchpriority="high"` : `loading="lazy"`;
-  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${loading} decoding="async">`;
+  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${loading} decoding="async">`;
 }
 
 function logoTag(seriesId, setId) {
+  const lang = state.market || "fr";
+  const primary = `https://assets.tcgdex.net/${lang}/${seriesId}/${setId}/logo`;
   const fr = `https://assets.tcgdex.net/fr/${seriesId}/${setId}/logo`;
   const en = `https://assets.tcgdex.net/en/${seriesId}/${setId}/logo`;
-  const symbol = `https://assets.tcgdex.net/fr/${seriesId}/${setId}/symbol.png`;
-  const rest = [fr + ".png", en + ".webp", en + ".png", symbol];
-  return `<img src="${esc(fr)}.webp" data-fallbacks="${esc(rest.join("|"))}" alt="">`;
+  const rest = [primary + ".png", fr + ".webp", fr + ".png", en + ".webp", en + ".png", `https://assets.tcgdex.net/${lang}/${seriesId}/${setId}/symbol.png`];
+  return `<img src="${esc(primary)}.webp" data-fallbacks="${esc([...new Set(rest)].join("|"))}" alt="">`;
 }
 
 function typeColor(type) {
@@ -352,7 +501,8 @@ function activeCards() {
 }
 
 function resolveCard(card) {
-  if (card?.id && cache.has(card.id)) return { ...card, ...cache.get(card.id) };
+  const key = cacheKey(card?.id, card?.lang || state.market);
+  if (card?.id && cache.has(key)) return { ...card, ...cache.get(key) };
   return card;
 }
 
@@ -372,42 +522,45 @@ function shownCards() {
   return sortedActive().slice(0, state.page * PAGE_SIZE);
 }
 
-async function fetchJSON(path) {
-  const response = await fetch(API + path);
+async function fetchJSON(path, lang = state.market) {
+  const response = await fetch(apiRoot(lang) + path);
   if (!response.ok) throw new Error(String(response.status));
   return response.json();
 }
 
-async function getCard(id) {
-  if (cache.has(id)) return cache.get(id);
-  if (inflight.has(id)) return inflight.get(id);
-  const pending = fetchJSON(`/cards/${encodeURIComponent(id)}`)
+async function getCard(id, lang = state.market) {
+  const key = cacheKey(id, lang);
+  if (cache.has(key)) return cache.get(key);
+  if (inflight.has(key)) return inflight.get(key);
+  const pending = fetchJSON(`/cards/${encodeURIComponent(id)}`, lang)
     .then((data) => {
-      cache.set(id, data);
-      inflight.delete(id);
+      data.lang = lang || "fr";
+      cache.set(key, data);
+      inflight.delete(key);
       return data;
     })
     .catch((error) => {
-      inflight.delete(id);
+      inflight.delete(key);
       throw error;
     });
-  inflight.set(id, pending);
+  inflight.set(key, pending);
   return pending;
 }
 
-function ensureSeriesSets(id) {
-  if (!setsCache.has(id)) {
+function ensureSeriesSets(id, lang = state.market) {
+  const key = cacheKey(id, lang);
+  if (!setsCache.has(key)) {
     setsCache.set(
-      id,
-      fetchJSON(`/series/${encodeURIComponent(id)}`)
+      key,
+      fetchJSON(`/series/${encodeURIComponent(id)}`, lang)
         .then((data) => data.sets || [])
         .catch((error) => {
-          setsCache.delete(id);
+          setsCache.delete(key);
           throw error;
         }),
     );
   }
-  return setsCache.get(id);
+  return setsCache.get(key);
 }
 
 async function pool(items, limit, worker) {
@@ -425,7 +578,10 @@ function loadFavs() {
   try {
     const raw = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
     if (!Array.isArray(raw)) return [];
-    return raw.filter((item) => item && cleanId(item.id, "") && item.name);
+    return raw.filter((item) => item && cleanId(item.id, "") && item.name).map((item) => ({
+      ...item,
+      lang: MARKETS[item.lang] ? item.lang : "fr",
+    }));
   } catch {
     return [];
   }
@@ -436,8 +592,8 @@ function saveFavs() {
   updateFavCount();
 }
 
-function isFav(id) {
-  return state.favorites.some((item) => item.id === id);
+function isFav(id, lang = state.market) {
+  return state.favorites.some((item) => item.id === id && (item.lang || "fr") === (lang || "fr"));
 }
 
 function snapshot(card) {
@@ -451,11 +607,13 @@ function snapshot(card) {
     setTotal: setSize(card) || null,
     trend: typeof card.pricing?.cardmarket?.trend === "number" ? card.pricing.cardmarket.trend : null,
     pricing: card.pricing || null,
+    lang: card.lang || state.market || "fr",
   };
 }
 
 function touchFav(card) {
-  const index = state.favorites.findIndex((item) => item.id === card.id);
+  const lang = card.lang || state.market || "fr";
+  const index = state.favorites.findIndex((item) => item.id === card.id && (item.lang || "fr") === lang);
   if (index < 0) return;
   state.favorites[index] = { ...state.favorites[index], ...snapshot(card) };
   saveFavs();
@@ -467,9 +625,10 @@ function readContext() {
     return {
       seriesId: cleanId(raw.seriesId, "me"),
       setId: cleanId(raw.setId, "me05"),
+      market: MARKETS[raw.market] ? raw.market : "fr",
     };
   } catch {
-    return { seriesId: "me", setId: "me05" };
+    return { seriesId: "me", setId: "me05", market: "fr" };
   }
 }
 
@@ -477,6 +636,7 @@ function rememberContext() {
   sessionStorage.setItem(CTX_KEY, JSON.stringify({
     seriesId: state.gallerySeriesId,
     setId: state.setId,
+    market: state.market,
   }));
 }
 
@@ -580,7 +740,7 @@ function fanInner() {
     return `<div class="fan">${[0, 1, 2].map(() => `<div class="stage skel"></div>`).join("")}</div>`;
   }
   return `<div class="fan">${cards.map((card, index) => `
-    <button class="fan-card${index === 1 ? " is-lead" : ""}" type="button" data-open="${esc(card.id)}">
+    <button class="fan-card${index === 1 ? " is-lead" : ""}" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">
       <span class="stage" data-tilt data-label="${esc(initials(card.name))}">
         ${imgTag(card, "high", true)}
         <span class="shine" aria-hidden="true"></span>
@@ -602,12 +762,13 @@ function liveLine() {
 function heroHTML() {
   const setName = state.setDetail ? prettyName(state.setDetail.name) : "";
   const opened = setName ? ` Extension ouverte : ${esc(setName)}.` : "";
+  const devise = moneyIsConverted() ? "" : " en euros";
   return `
     <section class="hero">
       <div>
         <p class="kicker">Cabinet de cartes Pokémon</p>
         <h1>Chaque carte,<br><em>sa cote du jour.</em></h1>
-        <p class="lede">Aureum recense les cartes et affiche la tendance Cardmarket en euros, tirage par tirage.${opened}</p>
+        <p class="lede">Aureum recense les cartes et affiche la tendance Cardmarket${devise}, tirage par tirage.${opened}</p>
         <div class="hero-actions">
           <button class="btn solid" type="button" data-action="jump">Parcourir l'extension</button>
           <button class="btn" type="button" data-tab="cotes">Salle des cotes</button>
@@ -616,6 +777,26 @@ function heroHTML() {
       </div>
       <div id="fan-slot">${fanInner()}</div>
     </section>`;
+}
+
+function marketSelects() {
+  const current = MARKETS[state.market] || MARKETS.fr;
+  const markets = Object.entries(MARKETS).map(([id, item]) => (
+    `<option value="${id}"${id === state.market ? " selected" : ""}>${item.label}</option>`
+  )).join("");
+  const local = current.currency;
+  const showLocal = local !== "EUR";
+  const selected = activeCurrency();
+  return `
+    <label class="field">Cartes
+      <select id="market-select" aria-label="Collection">${markets}</select>
+    </label>
+    <label class="field">Prix
+      <select id="currency-select" aria-label="Devise"${showLocal ? "" : " disabled"}>
+        <option value="EUR"${selected === "EUR" ? " selected" : ""}>Euros</option>
+        ${showLocal ? `<option value="${local}"${selected === local ? " selected" : ""}>${current.currencyLabel}</option>` : ""}
+      </select>
+    </label>`;
 }
 
 function toolbarHTML() {
@@ -629,6 +810,7 @@ function toolbarHTML() {
     <div class="toolbar">
       <div class="controls">
         ${select}
+        ${marketSelects()}
         <label class="field">Tri
           <select id="sort-select">
             <option value="numero"${state.sort === "numero" ? " selected" : ""}>Numéro</option>
@@ -638,7 +820,9 @@ function toolbarHTML() {
         </label>
       </div>
       <button class="btn" type="button" data-action="random">Carte au hasard</button>
-    </div>`;
+    </div>
+    ${priceModeNote() ? `<p class="note">${esc(priceModeNote())}</p>` : ""}
+  `;
 }
 
 function headHTML() {
@@ -700,7 +884,7 @@ function headHTML() {
 
 function tileHTML(card) {
   const full = resolveCard(card);
-  const ready = Boolean(full.pricing) || cache.has(card.id);
+  const ready = Boolean(full.pricing) || cache.has(cacheKey(card.id, card.lang || state.market));
   return `
     <article class="tile" data-card="${esc(card.id)}">
       <button class="tile-hit" type="button" data-open="${esc(card.id)}">
@@ -787,6 +971,8 @@ function extensionsHTML() {
         </div>
         <p class="lede">Choisissez une série, puis une extension. La galerie suit la sélection.</p>
       </header>
+      <div class="toolbar"><div class="controls">${marketSelects()}</div></div>
+      ${priceModeNote() ? `<p class="note">${esc(priceModeNote())}</p>` : ""}
       <div class="series-row">${seriesButtons || `<p class="empty">Chargement des séries…</p>`}</div>
       ${state.error ? `<p class="banner" role="alert">${esc(state.error)}</p>` : ""}
       ${body}
@@ -801,7 +987,7 @@ function rankList(cards, start = 0) {
   if (!cards.length) return `<p class="empty">Aucune cote pour le moment.</p>`;
   return `<ol class="ranks">${cards.map((card, index) => `
     <li>
-      <button type="button" data-open="${esc(card.id)}" data-card="${esc(card.id)}">
+      <button type="button" data-open="${esc(card.id)}" data-card="${esc(card.id)}" data-lang="${esc(card.lang || "")}">
         <span class="rank">${String(start + index + 1).padStart(2, "0")}</span>
         <span class="rank-art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
         <span class="rank-copy">
@@ -889,15 +1075,15 @@ function coteHero(card) {
   const trend = card.pricing?.cardmarket?.trend;
   return `
     <article class="cote-hero${typeof trend === "number" && trend >= DEAR_EUR ? " is-dear" : ""}">
-      <button class="cote-open" type="button" data-open="${esc(card.id)}" aria-label="${esc(prettyName(card.name))}">
+      <button class="cote-open" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}" aria-label="${esc(prettyName(card.name))}">
         <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", true)}</span>
       </button>
       <div>
         ${dearLine(card)}
-        <p class="cote-price">${typeof trend === "number" ? esc(eur(trend)) : ""}</p>
+        <p class="cote-price">${typeof trend === "number" ? esc(money(trend)) : ""}</p>
         <h3 class="cote-name">${esc(prettyName(card.name))}</h3>
         <p class="tile-meta">${esc(metaLine(card))}</p>
-        <p class="note">Tendance Cardmarket. Pas une offre.</p>
+        <p class="note">Tendance Cardmarket. Pas une offre.${moneyIsConverted() ? " Affichée après conversion." : ""}</p>
       </div>
     </article>`;
 }
@@ -925,7 +1111,7 @@ async function loadHall() {
   const rows = [];
   await pool(HALL_IDS, 4, async (id) => {
     try {
-      const card = await getCard(id);
+      const card = await getCard(id, "fr");
       if (token !== hallEpoch) return;
       if (typeof card?.pricing?.cardmarket?.trend === "number") rows.push(card);
     } catch {
@@ -1119,7 +1305,7 @@ function favorisHTML() {
       <p class="note">Meilleure affaire : la plus forte baisse de la cote face à la moyenne des 30 derniers jours.</p>
       <div class="grid fav-grid">${orderedFavs().map((card) => `
         <article class="tile" data-card="${esc(card.id)}">
-          <button class="tile-hit" type="button" data-open="${esc(card.id)}">
+          <button class="tile-hit" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">
             <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
             <span class="tile-name">${esc(prettyName(card.name))}</span>
             <span class="tile-meta" data-slot="meta">${esc(metaLine({ ...card, set: { name: card.setName } }))}</span>
@@ -1127,7 +1313,7 @@ function favorisHTML() {
           </button>
           ${dealLine(card)}
           ${marketLinks(card)}
-          <button class="btn unfav" type="button" data-action="unfav" data-id="${esc(card.id)}">Retirer</button>
+          <button class="btn unfav" type="button" data-action="unfav" data-id="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">Retirer</button>
         </article>`).join("")}</div>
     </section>`;
 }
@@ -1740,7 +1926,7 @@ function hideGhost() {
 async function placeBinderCard(id) {
   const safe = cleanId(id, "");
   if (!safe) return;
-  let card = state.binder.cards[safe] || cache.get(safe);
+  let card = state.binder.cards[safe] || cache.get(cacheKey(safe));
   if (!card?.image) {
     try {
       card = await getCard(safe);
@@ -1821,6 +2007,7 @@ function loadCollection() {
         localId: looseNote(item.localId).trim().slice(0, 16),
         note: looseNote(item.note).trim(),
         trend: typeof item.trend === "number" && item.trend >= 0 ? item.trend : null,
+        lang: MARKETS[item.lang] ? item.lang : "fr",
       })),
     };
   } catch {
@@ -1832,8 +2019,8 @@ function saveCollection() {
   localStorage.setItem(COLL_KEY, JSON.stringify(state.collection));
 }
 
-function inCollection(id) {
-  return state.collection.items.some((item) => item.id === id);
+function inCollection(id, lang = state.market) {
+  return state.collection.items.some((item) => item.id === id && (item.lang || "fr") === (lang || "fr"));
 }
 
 function collectionFromCard(card, note = "") {
@@ -1844,18 +2031,20 @@ function collectionFromCard(card, note = "") {
     setName: card.set?.name || card.setName || "",
     localId: card.localId || "",
     note: looseNote(note).trim(),
+    lang: card.lang || state.market || "fr",
     trend: typeof card.pricing?.cardmarket?.trend === "number" ? card.pricing.cardmarket.trend : (typeof card.trend === "number" ? card.trend : null),
   };
 }
 
 function addToCollection(card) {
-  if (!card?.id || inCollection(card.id) || state.collection.items.length >= COLL_MAX) return;
+  const lang = card?.lang || state.market;
+  if (!card?.id || inCollection(card.id, lang) || state.collection.items.length >= COLL_MAX) return;
   state.collection.items.unshift(collectionFromCard(card));
   saveCollection();
 }
 
-function removeFromCollection(id) {
-  state.collection.items = state.collection.items.filter((item) => item.id !== id);
+function removeFromCollection(id, lang = state.market) {
+  state.collection.items = state.collection.items.filter((item) => !(item.id === id && (item.lang || "fr") === (lang || "fr")));
   saveCollection();
 }
 
@@ -1882,6 +2071,7 @@ function shareRow(item, withNote) {
     l: looseNote(item.localId).trim().slice(0, 16),
   };
   if (withNote) row.c = looseNote(item.note).trim();
+  if (MARKETS[item.lang] && item.lang !== "fr") row.g = item.lang;
   return row;
 }
 
@@ -1917,6 +2107,7 @@ function sanitizeRows(rows, withNote) {
       setName: looseNote(row?.s).trim(),
       localId: looseNote(row?.l).trim().slice(0, 16),
       note: withNote ? looseNote(row?.c).trim() : "",
+      lang: MARKETS[row?.g] ? row.g : "fr",
     }];
   });
 }
@@ -1945,15 +2136,15 @@ function collCard(card, editable) {
     ? `<label class="coll-label">Commentaire
         <textarea data-coll-note="${esc(card.id)}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
       </label>
-      <button class="btn unfav" type="button" data-action="coll-remove" data-id="${esc(card.id)}">Retirer</button>`
+      <button class="btn unfav" type="button" data-action="coll-remove" data-id="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">Retirer</button>`
     : (card.note ? `<p class="coll-note">${esc(card.note)}</p>` : "");
   return `
     <article class="coll-card" data-card="${esc(card.id)}">
-      <button class="coll-open" type="button" data-open="${esc(card.id)}" aria-label="${esc(prettyName(card.name))}">
+      <button class="coll-open" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}" aria-label="${esc(prettyName(card.name))}">
         <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
       </button>
       <div>
-        <button class="coll-title" type="button" data-open="${esc(card.id)}">${esc(prettyName(card.name))}</button>
+        <button class="coll-title" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">${esc(prettyName(card.name))}</button>
         <p class="tile-meta">${esc(meta)}</p>
         ${note}
       </div>
@@ -2025,7 +2216,7 @@ async function refreshCollection() {
   const token = ++collEpoch;
   await pool(state.collection.items, 4, async (item) => {
     try {
-      const full = await getCard(item.id);
+      const full = await getCard(item.id, item.lang || "fr");
       if (token !== collEpoch || state.visit || state.tab !== "collection") return;
       const trend = full.pricing?.cardmarket?.trend;
       item.trend = typeof trend === "number" ? trend : null;
@@ -2079,7 +2270,7 @@ async function hydrateVisit() {
   const rows = [...(state.visit.items || []), ...(state.visit.favs || [])];
   await pool(rows, 4, async (row) => {
     try {
-      const full = await getCard(row.id);
+      const full = await getCard(row.id, row.lang || "fr");
       if (token !== visitEpoch || state.tab !== "collection" || !state.visit) return;
       const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(full.id) : full.id.replace(/"/g, "");
       const keep = (list) => {
@@ -2214,7 +2405,7 @@ function setTab(tab) {
 async function loadIconics() {
   const results = await Promise.all(ICONIC_IDS.map(async (id) => {
     try {
-      return await getCard(id);
+      return await getCard(id, "fr");
     } catch {
       return null;
     }
@@ -2315,9 +2506,9 @@ function cardsToHydrate() {
 async function hydrateShown(token) {
   const slice = cardsToHydrate();
   slice.forEach((card) => {
-    if (cache.has(card.id)) patchCard(cache.get(card.id));
+    if (cache.has(cacheKey(card.id, card.lang || state.market))) patchCard(cache.get(cacheKey(card.id, card.lang || state.market)));
   });
-  const missing = slice.filter((card) => !cache.has(card.id));
+  const missing = slice.filter((card) => !cache.has(cacheKey(card.id, card.lang || state.market)));
   if (!missing.length) {
     if (state.sort === "cote" && token === epoch) {
       const y = window.scrollY;
@@ -2414,7 +2605,7 @@ async function refreshFavs() {
   const token = ++favEpoch;
   await pool(state.favorites, 4, async (fav) => {
     try {
-      const full = await getCard(fav.id);
+      const full = await getCard(fav.id, fav.lang || "fr");
       if (token !== favEpoch) return;
       touchFav(full);
       patchCard(full);
@@ -2463,18 +2654,18 @@ function duoHTML(card) {
     return `
       <article>
         <span>Tendance</span>
-        <strong>${esc(eur(amount))}</strong>
+        <strong>${esc(money(amount))}</strong>
         ${delta ? `<span class="delta ${delta.dir}">${esc(formatPct(delta.pct))}<span class="delta-hint"> vs 30 j</span></span>` : ""}
       </article>`;
   }
   return `
     <article>
       <span>Tirage de référence</span>
-      <strong>${esc(eur(refTrend))}</strong>
+      <strong>${esc(money(refTrend))}</strong>
     </article>
     <article class="hi">
       <span>${esc(labelVariant(best))}</span>
-      <strong>${esc(eur(bestTrend))}</strong>
+      <strong>${esc(money(bestTrend))}</strong>
     </article>`;
 }
 
@@ -2489,7 +2680,7 @@ function statsHTML(card) {
     ["Moyenne 30 j", prices.avg30],
   ].filter((row) => typeof row[1] === "number");
   if (!rows.length) return "";
-  return `<dl class="stats">${rows.map(([label, amount]) => `<div><dt>${esc(label)}</dt><dd>${esc(eur(amount))}</dd></div>`).join("")}</dl>`;
+  return `<dl class="stats">${rows.map(([label, amount]) => `<div><dt>${esc(label)}</dt><dd>${esc(money(amount))}</dd></div>`).join("")}</dl>`;
 }
 
 function variantsHTML(card) {
@@ -2507,8 +2698,8 @@ function variantsHTML(card) {
         ${rows.map(({ variant, trend, low }) => `
           <tr>
             <td>${esc(labelVariant(variant) || "Tirage")}</td>
-            <td>${typeof low === "number" ? (isOr() ? esc(eur(low)) : `<span class="price-lock">Or</span>`) : "—"}</td>
-            <td>${typeof trend === "number" ? (isOr() ? esc(eur(trend)) : `<span class="price-lock">Or</span>`) : "Cote indisponible"}</td>
+            <td>${typeof low === "number" ? (isOr() ? esc(money(low)) : `<span class="price-lock">Or</span>`) : "—"}</td>
+            <td>${typeof trend === "number" ? (isOr() ? esc(money(trend)) : `<span class="price-lock">Or</span>`) : "Cote indisponible"}</td>
           </tr>`).join("")}
       </tbody>
     </table>`;
@@ -2580,8 +2771,8 @@ function nextRandomId() {
 function ficheHTML(card) {
   const types = Array.isArray(card.types) ? card.types : [];
   const when = formatDay(card.pricing?.cardmarket?.updated);
-  const favOn = isFav(card.id);
-  const collOn = inCollection(card.id);
+  const favOn = isFav(card.id, card.lang || state.market);
+  const collOn = inCollection(card.id, card.lang || state.market);
   return `
     <article class="fiche">
       ${ficheBar()}
@@ -2612,9 +2803,9 @@ function ficheHTML(card) {
         ${card.illustrator ? `<p class="hint">Illustré par ${esc(card.illustrator)}.</p>` : ""}
         ${Array.isArray(card.dexId) && card.dexId.length ? `<p class="hint">Pokédex n° ${esc(card.dexId.join(", "))}</p>` : ""}
         <div class="fiche-actions">
-          <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
-          <button class="btn" type="button" data-action="binder-add" data-id="${esc(card.id)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
-          <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" ${!collOn && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${collOn ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
+          <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
+          <button class="btn" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
+          <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" ${!collOn && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${collOn ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
         </div>
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
       </div>
@@ -2625,16 +2816,19 @@ function fichePending() {
   return `<div class="pending">${ficheBar()}Ouverture de la fiche…</div>`;
 }
 
-async function openFiche(id, mode) {
+async function openFiche(id, modeOrOpts) {
+  const opts = typeof modeOrOpts === "string" ? { mode: modeOrOpts } : (modeOrOpts || {});
+  const lang = opts.lang || state.market;
   const safe = cleanId(id, "");
   if (!safe) return;
   const dialog = document.getElementById("fiche");
   dialog.dataset.current = safe;
-  dialog.dataset.mode = mode === "random" ? "random" : "";
+  dialog.dataset.lang = lang;
+  dialog.dataset.mode = opts.mode === "random" ? "random" : "";
   if (!dialog.open) dialog.innerHTML = fichePending();
   if (!dialog.open) dialog.showModal();
   try {
-    const card = await getCard(safe);
+    const card = await getCard(safe, lang);
     if (dialog.dataset.current !== safe) return;
     dialog.innerHTML = ficheHTML(card);
     touchFav(card);
@@ -2644,20 +2838,20 @@ async function openFiche(id, mode) {
   }
 }
 
-function toggleFav(id) {
-  const card = cache.get(id) || state.favorites.find((item) => item.id === id) || activeCards().find((item) => item.id === id);
+function toggleFav(id, lang = state.market) {
+  const card = cache.get(cacheKey(id, lang)) || state.favorites.find((item) => item.id === id && (item.lang || "fr") === lang) || activeCards().find((item) => item.id === id);
   if (!card) return;
-  if (isFav(id)) state.favorites = state.favorites.filter((item) => item.id !== id);
+  if (isFav(id, lang)) state.favorites = state.favorites.filter((item) => !(item.id === id && (item.lang || "fr") === lang));
   else if (!isOr() && state.favorites.length >= FREE_FAVS) {
     const dialog = document.getElementById("fiche");
     if (dialog?.open) dialog.close();
     setTab("or");
     return;
-  } else state.favorites.unshift(snapshot(card));
+  } else state.favorites.unshift(snapshot({ ...card, lang }));
   saveFavs();
   const button = document.querySelector("#fiche [data-action='fav']");
   if (button && button.dataset.id === id) {
-    const on = isFav(id);
+    const on = isFav(id, lang);
     button.setAttribute("aria-pressed", on ? "true" : "false");
     button.textContent = on ? "Retirer des favoris" : "Ajouter aux favoris";
   }
@@ -2892,9 +3086,10 @@ function bind() {
         state.universError = "";
         loadUnivers();
       }
-      if (action === "fav") toggleFav(actionEl.dataset.id);
+      if (action === "fav") toggleFav(actionEl.dataset.id, actionEl.dataset.lang || state.market);
       if (action === "binder-add") {
-        const card = cache.get(actionEl.dataset.id);
+        const lang = actionEl.dataset.lang || state.market;
+        const card = cache.get(cacheKey(actionEl.dataset.id, lang));
         if (card) {
           dialog.close();
           rangerCard(card);
@@ -2902,20 +3097,21 @@ function bind() {
       }
       if (action === "open-fiche") {
         document.getElementById("relief")?.close();
-        openFiche(actionEl.dataset.id);
+        openFiche(actionEl.dataset.id, { lang: actionEl.dataset.lang || state.market });
       }
       if (action === "coll-add") {
         const id = actionEl.dataset.id;
-        const card = cache.get(id);
-        if (inCollection(id)) removeFromCollection(id);
+        const lang = actionEl.dataset.lang || state.market;
+        const card = cache.get(cacheKey(id, lang));
+        if (inCollection(id, lang)) removeFromCollection(id, lang);
         else if (card) addToCollection(card);
-        const on = inCollection(id);
+        const on = inCollection(id, lang);
         actionEl.textContent = on ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection";
         actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
         if (state.tab === "collection" && !state.visit) render();
       }
       if (action === "coll-remove") {
-        removeFromCollection(actionEl.dataset.id);
+        removeFromCollection(actionEl.dataset.id, actionEl.dataset.lang || state.market);
         if (state.tab === "collection") render();
       }
       if (action === "coll-share") copyCollectionLink();
@@ -2938,7 +3134,8 @@ function bind() {
         render();
       }
       if (action === "unfav") {
-        state.favorites = state.favorites.filter((item) => item.id !== actionEl.dataset.id);
+        const lang = actionEl.dataset.lang || "fr";
+        state.favorites = state.favorites.filter((item) => !(item.id === actionEl.dataset.id && (item.lang || "fr") === lang));
         saveFavs();
         render();
       }
@@ -2975,10 +3172,22 @@ function bind() {
       return;
     }
 
-    if (openEl) openFiche(openEl.dataset.open);
+    if (openEl) openFiche(openEl.dataset.open, { lang: openEl.dataset.lang || state.market });
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.id === "market-select") {
+      applyMarket(event.target.value);
+    }
+    if (event.target.id === "currency-select") {
+      const local = marketCurrency();
+      state.currency = event.target.value === local ? local : "EUR";
+      if (state.market === "fr") state.currency = "EUR";
+      saveMarket();
+      const paint = () => render();
+      if (state.currency !== "EUR") loadFx().then(paint);
+      else paint();
+    }
     if (event.target.id === "set-select") {
       clearTimeout(searchTimer);
       loadSet(state.gallerySeriesId, event.target.value);
@@ -3048,7 +3257,7 @@ function bind() {
 
 async function recoverFromMarket(img) {
   try {
-    const card = await getCard(img.dataset.id);
+    const card = await getCard(img.dataset.id, img.dataset.lang || state.market);
     const src = marketArt(card, img.dataset.quality === "high" ? "high" : "low");
     img.dataset.probing = "";
     if (!src || src === img.getAttribute("src")) {
@@ -3075,13 +3284,85 @@ function registerServiceWorker() {
   else window.addEventListener("load", register);
 }
 
+function pickSeriesId(list) {
+  const ids = new Set((list || []).map((serie) => serie.id));
+  for (const id of ["me", "sv", "SV", "S", "swsh", "base"]) {
+    if (ids.has(id)) return id;
+  }
+  return list?.length ? list[list.length - 1].id : "";
+}
+
+function pickSetId(sets) {
+  const copy = (sets || []).slice().sort((a, b) => String(a.releaseDate || "").localeCompare(String(b.releaseDate || "")));
+  return copy.length ? copy[copy.length - 1].id : "";
+}
+
+async function openDefaultSet() {
+  const token = ++marketToken;
+  state.loading = true;
+  state.error = "";
+  try {
+    const list = await fetchJSON("/series");
+    if (token !== marketToken) return;
+    state.series = Array.isArray(list) ? list : [];
+    const seriesId = pickSeriesId(state.series);
+    if (!seriesId) throw new Error("empty");
+    const sets = await ensureSeriesSets(seriesId);
+    if (token !== marketToken) return;
+    const setId = pickSetId(sets);
+    if (!setId) throw new Error("empty");
+    await loadSet(seriesId, setId, { focus: state.tab === "galerie" });
+  } catch {
+    if (token !== marketToken) return;
+    state.loading = false;
+    state.error = "Cette collection ne s'ouvre pas.";
+    if (state.tab === "galerie" || state.tab === "extensions") render();
+  }
+}
+
+function applyMarket(lang) {
+  if (!MARKETS[lang] || lang === state.market) return;
+  epoch += 1;
+  state.market = lang;
+  state.currency = MARKETS[lang].currency;
+  saveMarket();
+  state.series = [];
+  state.gallerySets = [];
+  state.setCards = [];
+  state.setDetail = null;
+  state.searchCards = [];
+  state.page = 1;
+  state.view = "set";
+  state.query = "";
+  state.error = "";
+  state.loading = true;
+  state.gallerySeriesId = "";
+  state.setId = "";
+  state.browseSeriesId = "";
+  state.browseSets = [];
+  clearQueryBox();
+  render();
+  if (state.currency !== "EUR") loadFx().then(() => { if (state.market === lang) render(); });
+  openDefaultSet();
+}
+
 function boot() {
   bind();
   registerServiceWorker();
   const context = readContext();
-  state.gallerySeriesId = context.seriesId;
-  state.setId = context.setId;
-  state.browseSeriesId = context.seriesId;
+  if ((context.market || "fr") === state.market) {
+    state.gallerySeriesId = context.seriesId;
+    state.setId = context.setId;
+    state.browseSeriesId = context.seriesId;
+  } else if (state.market === "fr") {
+    state.gallerySeriesId = "me";
+    state.setId = "me05";
+    state.browseSeriesId = "me";
+  } else {
+    state.gallerySeriesId = "";
+    state.setId = "";
+    state.browseSeriesId = "";
+  }
   const params = new URLSearchParams(location.search);
   const inviteCode = params.get("invite") || "";
   state.guestInvite = /^[A-Z0-9]{6}$/.test(inviteCode)
@@ -3113,14 +3394,20 @@ function boot() {
       refreshCollection();
     }
     if (state.tab === "cotes") loadHall();
-    fetchJSON("/series")
-      .then((list) => {
-        state.series = Array.isArray(list) ? list : [];
-        if (state.tab === "extensions") render();
-      })
-      .catch(() => {});
-    loadIconics();
-    loadSet(state.gallerySeriesId, state.setId, { focus: state.tab === "galerie" });
+    if (state.currency !== "EUR") loadFx().then(() => { if (state.tab === "galerie" || state.tab === "cotes") render(); });
+    if (state.setId) {
+      fetchJSON("/series")
+        .then((list) => {
+          state.series = Array.isArray(list) ? list : [];
+          if (state.tab === "extensions") render();
+        })
+        .catch(() => {});
+      loadIconics();
+      loadSet(state.gallerySeriesId, state.setId, { focus: state.tab === "galerie" });
+    } else {
+      loadIconics();
+      openDefaultSet();
+    }
   });
 }
 
