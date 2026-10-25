@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0b0a08">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Aureum">
+    <title>Aureum — Cotes des cartes Pokémon</title>
+    <meta name="description" content="Cabinet pour recenser les cartes Pokémon et lire leur cote Cardmarket en euros.">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>html,body{background:#0b0a08}</style>
+  </head>
+  <body>
+    <a class="skip" href="#contenu">Aller au contenu</a>
+    <header class="top">
+      <div class="top-inner">
+        <button class="brand" type="button" data-tab="galerie" data-reset="1">
+          <span class="mark" aria-hidden="true"></span>
+          <span class="brand-text">
+            <strong>Aureum</strong>
+            <small>Cartes Pokémon</small>
+          </span>
+        </button>
+        <nav class="tabs" role="tablist" aria-label="Sections">
+          <button type="button" role="tab" data-tab="galerie" aria-selected="true">Galerie</button>
+          <button type="button" role="tab" data-tab="extensions" aria-selected="false">Extensions</button>
+          <button type="button" role="tab" data-tab="cotes" aria-selected="false">Cotes</button>
+          <button type="button" role="tab" data-tab="favoris" aria-selected="false">
+            Favoris <span id="fav-count" class="badge" hidden>0</span>
+          </button>
+        </nav>
+        <form class="search" id="search-form" role="search">
+          <label class="sr-only" for="q">Rechercher une carte</label>
+          <input id="q" name="q" type="search" placeholder="Nom d'une carte" autocomplete="off" enterkeyhint="search">
+          <button class="text-btn" id="clear-q" type="button" hidden>Effacer</button>
+          <button class="btn solid" type="submit">Chercher</button>
+        </form>
+      </div>
+    </header>
+    <main id="contenu">
+      <div id="app" aria-live="polite">
+        <p class="boot">Ouverture du cabinet…</p>
+      </div>
+    </main>
+    <footer class="colophon">
+      <p>Données TCGdex. Cotes Cardmarket en euros, indicatives.</p>
+      <p>Sur iPhone : bouton Partager, puis Sur l'écran d'accueil.</p>
+    </footer>
+    <dialog id="fiche" aria-label="Fiche de carte"></dialog>
+    <script src="app.js" type="module"></script>
+    <noscript>Aureum a besoin de JavaScript pour interroger les cotes.</noscript>
+  </body>
+</html>
