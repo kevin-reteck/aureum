@@ -1384,9 +1384,40 @@ dialog.is-leaving::backdrop {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
   .art { padding: 6px; }
   .tile-name, .tile-meta { overflow-wrap: break-word; }
+  .tile-name { -webkit-line-clamp: 4; min-height: 2.6em; }
   h1 { font-size: 2.15rem; }
   main { padding-inline: 16px; }
-  .top-inner { padding-inline: 16px; }
+  .top-inner {
+    padding-inline: 16px;
+    padding-bottom: 8px;
+    gap: 8px;
+  }
+  .brand { min-height: 44px; }
+  .tabs button {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .search { min-height: 48px; }
+  .search input { min-height: 44px; }
+  .search .btn.solid { min-height: 44px; }
+  .text-btn { min-height: 44px; min-width: 44px; padding-inline: 8px; }
+  .series-row button,
+  .fav-sort-btn { min-height: 44px; }
+  .relief .close { min-height: 44px; padding-inline: 16px; }
+  .sets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .set-tile { min-height: 168px; padding: 12px; }
+  .set-name { overflow-wrap: break-word; }
+  .logo { height: 64px; }
+  .logo img { max-height: 64px; height: auto; }
+  .market-links a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .coll-check { min-height: 44px; }
+  .section-head { margin-bottom: 12px; }
   .series-row, .sealed-tools { min-width: 0; max-width: 100%; }
   .sealed-tools {
     display: grid;
@@ -1407,8 +1438,9 @@ dialog.is-leaving::backdrop {
   }
   .tabs button {
     margin: 0;
-    padding: 8px 0 6px;
-    font-size: 0.82rem;
+    min-height: 44px;
+    padding: 0 2px;
+    font-size: 0.875rem;
   }
 }
 
@@ -1420,7 +1452,7 @@ dialog.is-leaving::backdrop {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  *, *::before, *::after {
+  *, *::before, *::after, *::backdrop {
     animation: none !important;
     transition: none !important;
   }
@@ -1428,7 +1460,10 @@ dialog.is-leaving::backdrop {
   .fan-card:nth-child(2),
   .fan-card:nth-child(3),
   dialog,
+  dialog[open],
   #app.is-rising { transform: none; }
+  dialog[open],
+  dialog[open]::backdrop { opacity: 1; }
 }
 
 .cote-hero {

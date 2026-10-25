@@ -2027,8 +2027,8 @@ function leaveFiche() {
   dialog.classList.add("is-leaving");
   window.setTimeout(() => {
     if (token !== ficheLeave) return;
-    dialog.classList.remove("is-leaving");
     if (dialog.open) dialog.close();
+    else dialog.classList.remove("is-leaving");
   }, 240);
 }
 
@@ -3457,6 +3457,7 @@ function bind() {
   const clear = document.getElementById("clear-q");
   const dialog = document.getElementById("fiche");
   dialog.addEventListener("close", () => {
+    dialog.classList.remove("is-leaving");
     productOpen = null;
   });
 
