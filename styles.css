@@ -837,9 +837,6 @@ dialog {
   transform: translateY(8px);
   transition:
     opacity 220ms ease-out,
-    transform 220ms ease-out;
-  transition:
-    opacity 220ms ease-out,
     transform 220ms ease-out,
     overlay 220ms ease-out allow-discrete,
     display 220ms ease-out allow-discrete;
@@ -1819,11 +1816,14 @@ html[data-porte="ok"] .colophon,
 html[data-porte="ok"] .skip { display: block !important; }
 
 #porte {
-  min-height: 100dvh;
+  position: fixed;
+  z-index: 40;
+  inset: 0;
   display: grid;
   align-items: safe center;
   justify-items: center;
   overflow: auto;
+  background: var(--bg);
   padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
 }
 #porte[hidden] { display: none !important; }

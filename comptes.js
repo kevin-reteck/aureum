@@ -12,6 +12,11 @@ function maintenant() {
   return new Date().toISOString();
 }
 
+function instant(valeur) {
+  const n = Date.parse(valeur);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function copie(valeur) {
   if (valeur == null) return valeur;
   return JSON.parse(JSON.stringify(valeur));
@@ -94,8 +99,8 @@ function fusionner(distant) {
       users[propre] = src;
       return;
     }
-    const pass = Date.parse(src.passwordAt) > Date.parse(ici.passwordAt) ? src : ici;
-    const data = Date.parse(src.updatedAt) > Date.parse(ici.updatedAt) ? src : ici;
+    const pass = instant(src.passwordAt) > instant(ici.passwordAt) ? src : ici;
+    const data = instant(src.updatedAt) > instant(ici.updatedAt) ? src : ici;
     users[propre] = {
       salt: pass.salt,
       hash: pass.hash,
@@ -109,7 +114,7 @@ function fusionner(distant) {
   });
   const gardes = Object.entries(users)
     .filter(([, compte]) => compteValide(compte))
-    .sort((a, b) => Date.parse(b[1].updatedAt) - Date.parse(a[1].updatedAt))
+    .sort((a, b) => instant(b[1].updatedAt) - instant(a[1].updatedAt))
     .slice(0, COMPTE_MAX);
   comptes = { users: Object.fromEntries(gardes) };
 }
@@ -144,7 +149,7 @@ export function aDesOrphelins() {
 export async function preparer() {
   comptes = lireDisque();
   try {
-    const reponse = await fetch(new URL("comptes.json?v=41", location.href));
+    const reponse = await fetch(new URL("comptes.json?v=42", location.href));
     if (reponse.ok) fusionner(await reponse.json());
   } catch {
     /* L'appareil garde sa copie si le fichier n'est pas joignable. */
@@ -210,9 +215,15 @@ export async function creer(email, mot) {
   };
   await poserMot(compte, mot);
   comptes.users[propre] = compte;
-  localStorage.setItem(MIGRE_KEY, "1");
   session = propre;
-  ecrireDisque();
+  try {
+    ecrireDisque();
+  } catch {
+    delete comptes.users[propre];
+    session = "";
+    return { ok: false, code: "stockage" };
+  }
+  localStorage.setItem(MIGRE_KEY, "1");
   return { ok: true };
 }
 
@@ -223,7 +234,12 @@ export async function entrer(email, mot) {
   const secret = await deriver(mot, compte.salt, Number(compte.iterations) || ITERATIONS);
   if (!pareil(secret.hash, compte.hash)) return { ok: false, code: "mauvais" };
   session = propre;
-  ecrireDisque();
+  try {
+    ecrireDisque();
+  } catch {
+    session = "";
+    return { ok: false, code: "stockage" };
+  }
   return { ok: true };
 }
 
@@ -239,8 +255,17 @@ export async function reinitialiser(motDev, email, mot) {
   const compte = propre && comptes.users[propre];
   if (!compte) return { ok: false, code: "absent" };
   if (String(mot || "").length < 6) return { ok: false, code: "court" };
+  const ancien = { salt: compte.salt, hash: compte.hash, iterations: compte.iterations, passwordAt: compte.passwordAt };
   await poserMot(compte, mot);
-  ecrireDisque();
+  try {
+    ecrireDisque();
+  } catch {
+    compte.salt = ancien.salt;
+    compte.hash = ancien.hash;
+    compte.iterations = ancien.iterations;
+    compte.passwordAt = ancien.passwordAt;
+    return { ok: false, code: "stockage" };
+  }
   return { ok: true, email: propre };
 }
 

@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=41";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=42";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -581,8 +581,8 @@ function imgTag(card, size, eager) {
   const mark = esc(initials(card.name));
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
-  const priority = eager ? `fetchpriority="high"` : "";
-  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${priority} loading="eager" decoding="async">`;
+  const charge = eager ? `loading="eager" fetchpriority="high"` : `loading="lazy"`;
+  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${charge} decoding="async">`;
 }
 
 function logoTag(seriesId, setId) {
@@ -690,8 +690,21 @@ function loadFavs() {
   }
 }
 
+function noterStockage(ok) {
+  if (ok !== false) return;
+  let note = document.getElementById("stockage-note");
+  if (!note) {
+    note = document.createElement("p");
+    note.id = "stockage-note";
+    note.className = "banner";
+    note.setAttribute("role", "alert");
+    document.querySelector("main")?.prepend(note);
+  }
+  note.textContent = "Le navigateur refuse d'enregistrer. Libère un peu de place, puis réessaie.";
+}
+
 function saveFavs() {
-  ecrireCabinet("favoris", state.favorites);
+  noterStockage(ecrireCabinet("favoris", state.favorites));
   updateFavCount();
 }
 
@@ -987,13 +1000,14 @@ function headHTML() {
     <p class="note" id="hydrate-note"></p>`;
 }
 
-function tileHTML(card) {
+function tileHTML(card, eager = false) {
   const full = resolveCard(card);
   const ready = Boolean(full.pricing) || cache.has(cacheKey(card.id, card.lang || state.market));
+  const lang = card.lang || state.market;
   return `
     <article class="tile" data-card="${esc(card.id)}">
-      <button class="tile-hit" type="button" data-open="${esc(card.id)}">
-        <span class="art" data-label="${esc(initials(full.name))}">${imgTag(full, "low", false)}</span>
+      <button class="tile-hit" type="button" data-open="${esc(card.id)}" data-lang="${esc(lang)}">
+        <span class="art" data-label="${esc(initials(full.name))}">${imgTag(full, "low", eager)}</span>
         <span class="tile-name">${esc(prettyName(full.name || "Carte"))}</span>
         <span class="tile-meta" data-slot="meta">${esc(metaLine(full))}</span>
         <span class="price-line${ready ? "" : " is-wait"}" data-slot="price">${ready ? priceHTML(full) : ""}</span>
@@ -1033,7 +1047,7 @@ function renderGrid() {
     watchMore();
     return;
   }
-  grille.innerHTML = `<div class="grid">${shown.map(tileHTML).join("")}</div>`;
+  grille.innerHTML = `<div class="grid">${shown.map((card, index) => tileHTML(card, index < 4)).join("")}</div>`;
   const more = activeCards().length > shown.length;
   if (foot) foot.innerHTML = more ? `<div class="more-sentinel" data-more="galerie"></div>` : "";
   watchMore();
@@ -1337,7 +1351,7 @@ function favorisHTML() {
       <div class="empty-state">
         <span class="mark lg" aria-hidden="true"></span>
         <h2>Le cabinet est vide.</h2>
-        <p class="lede">Ouvrez une fiche, puis ajoutez la carte aux favoris. Elle reste dans ce navigateur.</p>
+        <p class="lede">Ouvrez une fiche, puis ajoutez la carte aux favoris. Elle reste dans ton compte.</p>
         <button class="btn solid" type="button" data-tab="galerie">Retour à la galerie</button>
       </div>`;
   }
@@ -1348,7 +1362,7 @@ function favorisHTML() {
           <p class="kicker">Cabinet</p>
           <h2>Favoris</h2>
         </div>
-        <p class="lede">Les cartes épinglées restent dans ce navigateur. eBay s'ouvre trié du moins cher au plus cher. Vinted s'ouvre sur les annonces les plus proches de la carte.</p>
+        <p class="lede">Les cartes épinglées restent dans ton compte, sur cet appareil. eBay s'ouvre trié du moins cher au plus cher. Vinted s'ouvre sur les annonces les plus proches de la carte.</p>
       </header>
       <div class="fav-sort" role="group" aria-label="Trier les favoris">
         ${favSortButton("affaires", "Meilleures affaires")}
@@ -1733,11 +1747,11 @@ function loadBinder() {
 }
 
 function saveBinder() {
-  ecrireCabinet("classeur", {
+  noterStockage(ecrireCabinet("classeur", {
     page: state.binder.page,
     pages: state.binder.pages,
     cards: state.binder.cards,
-  });
+  }));
 }
 
 function binderFind(id) {
@@ -1976,7 +1990,7 @@ function reliefHTML(card, slot) {
       <p class="relief-name">${esc(prettyName(card.name))}</p>
       <p class="hint">${foilHint(kind)}</p>
       <div class="fiche-actions">
-        <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}">Voir la fiche</button>
+        <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">Voir la fiche</button>
         <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
       </div>
     </div>`;
@@ -2271,9 +2285,11 @@ function openRelief(id, slot) {
   if (!variantFlags(card)) refreshReliefFoil(card.id, card.lang || state.market);
 }
 
+let binderTurning = false;
+
 function turnBinder(dir) {
   const next = state.binder.page + dir;
-  if (next < 0 || next >= state.binder.pages.length) return;
+  if (binderTurning || next < 0 || next >= state.binder.pages.length) return;
   const sheet = document.getElementById("binder-sheet");
   const apply = () => {
     state.binder.page = next;
@@ -2285,10 +2301,12 @@ function turnBinder(dir) {
     apply();
     return;
   }
+  binderTurning = true;
   let swapped = false;
   const swap = () => {
     if (swapped) return;
     swapped = true;
+    binderTurning = false;
     sheet.removeEventListener("transitionend", onOut);
     apply();
     sheet.classList.remove("is-turning");
@@ -2411,6 +2429,18 @@ function hideGhost() {
 async function placeBinderCard(id) {
   const safe = cleanId(id, "");
   if (!safe) return;
+  const found = binderFind(safe);
+  if (found) {
+    state.binder.page = found.page;
+    state.binderSlot = found.slot;
+    state.binderHits = [];
+    state.binderQuery = "";
+    saveBinder();
+    const champ = document.getElementById("binder-q");
+    if (champ) champ.value = "";
+    paintBinder();
+    return;
+  }
   let card = state.binder.cards[safe] || cache.get(cacheKey(safe));
   if (!card?.image || !variantFlags(card)) {
     try {
@@ -2546,7 +2576,7 @@ function loadCollection() {
 }
 
 function saveCollection() {
-  ecrireCabinet("collection", state.collection);
+  noterStockage(ecrireCabinet("collection", state.collection));
 }
 
 function inCollection(id, lang = state.market) {
@@ -2643,6 +2673,7 @@ function sanitizeRows(rows, withNote) {
 }
 
 async function decodeShare(token) {
+  try {
   if (typeof token !== "string" || token.length < 4 || token.length > 4000) return null;
   const kind = token[0];
   const bytes = b64urlToBytes(token.slice(1));
@@ -2652,12 +2683,16 @@ async function decodeShare(token) {
     json = await new Response(stream).text();
   } else if (kind === "j") json = new TextDecoder().decode(bytes);
   else return null;
+  if (json.length > 200000) return null;
   const data = JSON.parse(json);
   if (!data || data.v !== 1) return null;
   const items = sanitizeRows(data.items, true);
   const favs = sanitizeRows(data.favs, false);
   if (!items.length && !favs.length) return null;
   return { name: looseName(data.n).trim(), items, favs };
+  } catch {
+    return null;
+  }
 }
 
 function collCard(card, editable) {
@@ -2667,7 +2702,7 @@ function collCard(card, editable) {
     : `<span class="price-missing">Cote indisponible</span>`;
   const note = editable
     ? `<label class="coll-label">Commentaire
-        <textarea data-coll-note="${esc(card.id)}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
+        <textarea data-coll-note="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
       </label>
       <button class="btn unfav" type="button" data-action="coll-remove" data-id="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">Retirer</button>`
     : (card.note ? `<p class="coll-note">${esc(card.note)}</p>` : "");
@@ -2780,7 +2815,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Tes cartes, un commentaire, une cote en euros. Tout reste sur cet appareil. Le lien montre la page, il ne vend rien.</p>
+        <p class="lede">Tes cartes, un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -2843,6 +2878,20 @@ async function copyCollectionLink() {
   url.searchParams.set("voir", token);
   url.hash = "collection";
   const link = url.toString();
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Collection Aureum", url: link });
+      state.shareNote = "Lien prêt à envoyer.";
+      if (status) status.textContent = state.shareNote;
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        state.shareNote = "";
+        if (status) status.textContent = "";
+        return;
+      }
+    }
+  }
   try {
     await navigator.clipboard.writeText(link);
     state.shareNote = "Lien copié.";
@@ -3107,7 +3156,7 @@ async function hydrateShown(token) {
 async function selectSeries(seriesId) {
   const id = cleanId(seriesId, state.browseSeriesId);
   state.browseSeriesId = id;
-  if (setsCache.has(id)) {
+  if (setsCache.has(cacheKey(id))) {
     state.browseSets = await ensureSeriesSets(id);
     state.browseLoading = false;
     if (state.tab === "extensions") render();
@@ -3564,7 +3613,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=41", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=42", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -3740,7 +3789,7 @@ function telecharger(nom, contenu, type) {
   lien.href = url;
   lien.download = nom;
   lien.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 async function partagerSignal(report) {
@@ -3868,7 +3917,8 @@ function bind() {
     }
     const noteId = event.target.dataset?.collNote;
     if (noteId) {
-      const item = state.collection.items.find((row) => row.id === noteId);
+      const noteLang = event.target.dataset.lang || "fr";
+      const item = state.collection.items.find((row) => row.id === noteId && (row.lang || "fr") === noteLang);
       if (item) {
         item.note = looseNote(event.target.value);
         saveCollection();

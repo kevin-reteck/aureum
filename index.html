@@ -16,12 +16,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=41">
+    <link rel="stylesheet" href="styles.css?v=42">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
         const session = localStorage.getItem("aureum.session") || "";
-        if (session.includes("@")) document.documentElement.dataset.porte = "ok";
+        const brut = JSON.parse(localStorage.getItem("aureum.comptes") || "{}");
+        if (session.includes("@") && brut.users && brut.users[session]) document.documentElement.dataset.porte = "ok";
       } catch (error) { /* L'appareil refuse le stockage : la porte reste fermée. */ }
       window.aureumErreurs = [];
       function aureumNoterErreur(texte) {
@@ -162,7 +163,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=41";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=42";
 
       const porte = document.getElementById("porte");
       const entrerForm = document.getElementById("porte-entrer");
@@ -184,7 +185,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=41");
+        import("./app.js?v=42");
       }
 
       function fermerPorte() {
@@ -218,9 +219,13 @@
         const resultat = await entrer(document.getElementById("porte-email").value, document.getElementById("porte-mot").value);
         bouton.disabled = false;
         if (!resultat.ok) {
-          note.textContent = "Adresse ou mot de passe incorrect.";
-          document.getElementById("porte-mot").value = "";
-          document.getElementById("porte-mot").focus();
+          note.textContent = resultat.code === "stockage"
+            ? "Le navigateur refuse d'enregistrer la session."
+            : "Adresse ou mot de passe incorrect.";
+          if (resultat.code !== "stockage") {
+            document.getElementById("porte-mot").value = "";
+            document.getElementById("porte-mot").focus();
+          }
           return;
         }
         ouvrirCabinet();
@@ -242,6 +247,7 @@
         else if (!resultat.ok && resultat.code === "court") note.textContent = "Le mot de passe doit avoir au moins 6 caractères.";
         else if (!resultat.ok && resultat.code === "existe") note.textContent = "Un compte existe déjà avec cette adresse.";
         else if (!resultat.ok && resultat.code === "plein") note.textContent = "Trois comptes au plus pour le moment.";
+        else if (!resultat.ok && resultat.code === "stockage") note.textContent = "Le navigateur refuse d'enregistrer ce compte.";
         else if (!resultat.ok) note.textContent = "Le compte n'a pas pu être créé.";
         else ouvrirCabinet();
       });
@@ -258,6 +264,7 @@
         );
         bouton.disabled = false;
         if (!resultat.ok && resultat.code === "dev") note.textContent = "Mot de passe développeur incorrect.";
+        else if (!resultat.ok && resultat.code === "stockage") note.textContent = "Le navigateur refuse d'enregistrer le nouveau mot de passe.";
         else if (!resultat.ok && resultat.code === "absent") note.textContent = "Aucun compte avec cette adresse sur cet appareil.";
         else if (!resultat.ok && resultat.code === "court") note.textContent = "Le mot de passe doit avoir au moins 6 caractères.";
         else note.textContent = `Mot de passe réinitialisé pour ${resultat.email}. Télécharge comptes.json et remplace le fichier du dépôt pour les autres téléphones.`;
