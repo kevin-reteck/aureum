@@ -1,6 +1,5 @@
 const FAV_KEY = "aureum.favoris";
 const CTX_KEY = "aureum.contexte";
-const FREE_FAVS = 3;
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
 const COLL_KEY = "aureum.collection";
 const COLL_MAX = 30;
@@ -16,7 +15,6 @@ const HALL_IDS = [
   "me01-188", "base1-2", "base1-15", "xy12-11",
 ];
 const DEAR_EUR = 200;
-const INVITE_KEY = "aureum.invite";
 const SERIES_ORDER = ["me", "sv", "swsh", "sm", "xy", "bw", "hgss", "dp", "pl", "col", "pop", "ex", "neo", "ecard", "lc", "gym", "base", "tcgp", "mc", "tk", "misc", "PMCG", "VS", "web", "e", "ADV", "PCG", "L", "XYb", "SM", "S", "M", "SV"];
 const MARKETS = {
   fr: { label: "France", currency: "EUR", currencyLabel: "Euros" },
@@ -158,9 +156,6 @@ const state = {
   collection: loadCollection(),
   visit: null,
   shareNote: "",
-  ownCode: loadOwnInvite(),
-  guestInvite: null,
-  inviteNote: "",
   hallCards: [],
   hallOrder: [],
   hallLoading: false,
@@ -313,19 +308,10 @@ function deltaInfo(card) {
   return { pct, dir };
 }
 
-function isOr() {
-  return true;
-}
-
-function lockHTML() {
-  return `<span class="price-lock">Or</span>`;
-}
-
-function priceHTML(card, options = {}) {
+function priceHTML(card) {
   const prices = card?.pricing?.cardmarket;
   const amount = typeof prices?.trend === "number" ? prices.trend : typeof prices?.avg === "number" ? prices.avg : null;
   if (amount == null) return `<span class="price-missing">Cote indisponible</span>`;
-  if (!options.apercu && !isOr()) return lockHTML();
   const delta = deltaInfo(card);
   const move = delta
     ? `<span class="delta ${delta.dir}">${esc(formatPct(delta.pct))}<span class="delta-hint"> vs 30 j</span></span>`
@@ -335,7 +321,6 @@ function priceHTML(card, options = {}) {
 
 function usdHTML(amount) {
   if (typeof amount !== "number") return `<span class="price-missing">Cote indisponible</span>`;
-  if (!isOr()) return lockHTML();
   return `<span class="price">${esc(usdFmt.format(amount))}</span>`;
 }
 
@@ -428,6 +413,31 @@ function markBroken(img) {
   img.classList.add("is-broken");
 }
 
+function revealScan(img) {
+  if (!(img instanceof HTMLImageElement)) return;
+  if (img.complete && img.naturalWidth > 0) img.classList.remove("is-trying", "is-broken");
+}
+
+function wakeScans(root = document) {
+  root.querySelectorAll("img[src]").forEach((img) => {
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.complete && img.naturalWidth > 0) {
+      img.classList.remove("is-trying", "is-broken");
+      return;
+    }
+    if (!img.complete || img.dataset.woken === "1") return;
+    img.dataset.woken = "1";
+    img.classList.remove("is-trying");
+    const queue = (img.dataset.fallbacks || "").split("|").filter(Boolean);
+    if (queue.length || img.dataset.id) {
+      img.dataset.probing = "1";
+      probeScans(img, queue);
+      return;
+    }
+    markBroken(img);
+  });
+}
+
 function showScan(img, src) {
   img.dataset.probing = "";
   img.dataset.fallbacks = "";
@@ -479,8 +489,8 @@ function imgTag(card, size, eager) {
   const mark = esc(initials(card.name));
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
-  const loading = eager ? `fetchpriority="high"` : `loading="lazy"`;
-  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${loading} decoding="async">`;
+  const priority = eager ? `fetchpriority="high"` : "";
+  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${priority} decoding="async">`;
 }
 
 function logoTag(seriesId, setId) {
@@ -1026,23 +1036,6 @@ function quoteHTML() {
     ${quote.rows.length ? rankList(quote.rows) : ""}`;
 }
 
-function loadOwnInvite() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(INVITE_KEY) || "{}");
-    if (raw && /^[A-Z0-9]{6}$/.test(raw.code)) return raw.code;
-  } catch {
-    /* Un nouveau code est créé plus bas. */
-  }
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = new Uint8Array(6);
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) crypto.getRandomValues(bytes);
-  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-  let code = "";
-  for (const value of bytes) code += alphabet[value % alphabet.length];
-  localStorage.setItem(INVITE_KEY, JSON.stringify({ code }));
-  return code;
-}
-
 function shuffleIds(ids) {
   const copy = ids.slice();
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -1088,22 +1081,6 @@ function coteHero(card) {
     </article>`;
 }
 
-function inviteBox() {
-  const guest = state.guestInvite;
-  const banner = guest
-    ? `<p class="banner">${guest.name ? `${esc(guest.name)} t'ouvre la salle des cotes.` : "Un ami t'ouvre la salle des cotes."}</p>`
-    : "";
-  return `
-    ${banner}
-    <div class="invite-box">
-      <p class="kicker">Code pour un ami</p>
-      <p class="invite-code">${esc(state.ownCode)}</p>
-      <button class="btn" type="button" data-action="invite-copy">Copier le lien</button>
-      <p class="note" id="invite-status">${esc(state.inviteNote)}</p>
-      <p class="note">Le lien ouvre cette salle chez lui. Pas de compte, pas d'argent.</p>
-    </div>`;
-}
-
 async function loadHall() {
   if (state.hallLoading || state.hallCards.length) return;
   state.hallLoading = true;
@@ -1124,24 +1101,6 @@ async function loadHall() {
   state.hallFailed = rows.length === 0;
   state.hallLoading = false;
   if (state.tab === "cotes") render();
-}
-
-async function copyInviteLink() {
-  const status = document.getElementById("invite-status");
-  const url = new URL(location.href);
-  url.search = "";
-  url.searchParams.set("invite", state.ownCode);
-  const name = state.collection.named ? looseName(state.collection.name).trim() : "";
-  if (name) url.searchParams.set("ami", name);
-  url.hash = "cotes";
-  const link = url.toString();
-  try {
-    await navigator.clipboard.writeText(link);
-    state.inviteNote = "Lien copié.";
-  } catch {
-    state.inviteNote = link;
-  }
-  if (status) status.textContent = state.inviteNote;
 }
 
 function cotesHTML() {
@@ -1171,7 +1130,6 @@ function cotesHTML() {
         </div>
         <p class="lede">Les plus fortes tendances Cardmarket, de 1999 à aujourd'hui. Le mélange reprend les mêmes cartes, dans un autre ordre.</p>
       </header>
-      ${inviteBox()}
       <div class="fav-sort" role="group" aria-label="Ordre de la salle">
         ${mode("tendance", "Par tendance")}
         ${mode("melange", "Toutes les années")}
@@ -1367,7 +1325,7 @@ function sealedTiles() {
       <article class="tile">
         <button class="tile-hit" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
           <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
-            <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" loading="lazy" decoding="async">
+            <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" decoding="async">
           </span>
           <span class="tile-name">${esc(item.name)}</span>
           <span class="tile-meta">${esc(bits.join(" · "))}</span>
@@ -1532,7 +1490,7 @@ function universTiles() {
     if (day) bits.push(day);
     const price = usdHTML(item.usd);
     const art = /^\d+$/.test(String(item.id))
-      ? `<img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" loading="lazy" decoding="async">`
+      ? `<img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" decoding="async">`
       : `<span class="monogram" data-label="${esc(initials(item.name))}">${esc(initials(item.name))}</span>`;
     return `
       <article class="tile">
@@ -2132,6 +2090,9 @@ async function decodeShare(token) {
 
 function collCard(card, editable) {
   const meta = metaLine({ ...card, set: { name: card.setName } });
+  const price = typeof card.trend === "number"
+    ? `<span class="price">${esc(eur(card.trend))}</span>`
+    : `<span class="price-missing">Cote indisponible</span>`;
   const note = editable
     ? `<label class="coll-label">Commentaire
         <textarea data-coll-note="${esc(card.id)}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
@@ -2141,11 +2102,12 @@ function collCard(card, editable) {
   return `
     <article class="coll-card" data-card="${esc(card.id)}">
       <button class="coll-open" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}" aria-label="${esc(prettyName(card.name))}">
-        <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
+        <span class="art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", true)}</span>
       </button>
-      <div>
+      <div class="coll-body">
         <button class="coll-title" type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">${esc(prettyName(card.name))}</button>
         <p class="tile-meta">${esc(meta)}</p>
+        <p class="price-line">${price}</p>
         ${note}
       </div>
     </article>`;
@@ -2206,7 +2168,7 @@ function worthHTML() {
     <p class="coll-worth" id="coll-worth">
       <span class="kicker">Valeur indicative</span>
       <strong class="price">${esc(eur(sum))}</strong>
-      <span class="deal-note">Somme des cotes Cardmarket. Chaque carte compte une fois. Pas un prix de vente.</span>
+      <span class="deal-note">Somme des cotes Cardmarket, en euros. Chaque carte compte une fois. Pas un prix de vente.</span>
       ${hole}
     </p>`;
 }
@@ -2238,7 +2200,7 @@ function collectionHTML() {
   const mine = state.collection;
   const empty = mine.items.length
     ? ""
-    : `<p class="note">Aucune carte pour l'instant. Ouvre une fiche, puis ajoute-la à ta collection.</p>`;
+    : `<div class="empty-state"><p class="lede">Aucune carte pour l'instant. Ouvre une fiche, puis ajoute-la à ta collection.</p></div>`;
   return `
     <section class="panel">
       <header class="section-head">
@@ -2246,7 +2208,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Un commentaire sous chaque carte, sur cet appareil. Le lien la montre à qui tu veux, avec ton nom ou sans. Rien ne se vend ici.</p>
+        <p class="lede">Tes cartes, un commentaire, une cote en euros. Tout reste sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -2343,6 +2305,14 @@ function render() {
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
   watchMore();
+  wakeScans(app);
+  window.setTimeout(() => wakeScans(app), 800);
+  window.setTimeout(() => {
+    app.querySelectorAll("img.is-trying").forEach((img) => {
+      if (img.naturalWidth > 0) img.classList.remove("is-trying", "is-broken");
+      else img.classList.remove("is-trying");
+    });
+  }, 1800);
 }
 
 let moreObserver = null;
@@ -2353,18 +2323,21 @@ function growPage(kind) {
     state.page += 1;
     renderGrid();
     hydrateShown(epoch);
+    wakeScans(document.getElementById("app") || document);
     return;
   }
   if (kind === "sealed") {
     if (state.sealedPage * PAGE_SIZE >= sealedRows().length) return;
     state.sealedPage += 1;
     paintSealed();
+    wakeScans(document.getElementById("app") || document);
     return;
   }
   if (kind === "univers") {
     if (state.universPage * PAGE_SIZE >= universRows().length) return;
     state.universPage += 1;
     paintUnivers();
+    wakeScans(document.getElementById("app") || document);
   }
 }
 
@@ -2640,13 +2613,6 @@ function duoHTML(card) {
   if (refTrend == null && bestTrend == null) {
     return `<p class="price-missing">Cote indisponible pour ce tirage.</p>`;
   }
-  if (!isOr()) {
-    return `
-      <article>
-        <span>Tendance</span>
-        <strong class="price-lock">Or</strong>
-      </article>`;
-  }
   const showDuo = refTrend != null && bestTrend != null && bestTrend > refTrend * 1.15;
   if (!showDuo) {
     const amount = refTrend ?? bestTrend;
@@ -2670,7 +2636,6 @@ function duoHTML(card) {
 }
 
 function statsHTML(card) {
-  if (!isOr()) return "";
   const prices = card.pricing?.cardmarket;
   if (!prices) return "";
   const rows = [
@@ -2698,8 +2663,8 @@ function variantsHTML(card) {
         ${rows.map(({ variant, trend, low }) => `
           <tr>
             <td>${esc(labelVariant(variant) || "Tirage")}</td>
-            <td>${typeof low === "number" ? (isOr() ? esc(money(low)) : `<span class="price-lock">Or</span>`) : "—"}</td>
-            <td>${typeof trend === "number" ? (isOr() ? esc(money(trend)) : `<span class="price-lock">Or</span>`) : "Cote indisponible"}</td>
+            <td>${typeof low === "number" ? esc(money(low)) : "—"}</td>
+            <td>${typeof trend === "number" ? esc(money(trend)) : "Cote indisponible"}</td>
           </tr>`).join("")}
       </tbody>
     </table>`;
@@ -2778,7 +2743,7 @@ function ficheHTML(card) {
       ${ficheBar()}
       <div class="fiche-art">
         <div class="stage" data-tilt data-label="${esc(initials(card.name))}">
-          ${imgTag(card, isOr() ? "high" : "low", true)}
+          ${imgTag(card, "high", true)}
           <span class="shine" aria-hidden="true"></span>
         </div>
       </div>
@@ -2794,8 +2759,8 @@ function ficheHTML(card) {
         ${card.evolveFrom ? `<p class="hint">Évolue de ${esc(card.evolveFrom)}</p>` : ""}
         ${card.description ? `<blockquote class="flavor">${esc(card.description)}</blockquote>` : ""}
         <div class="duo">${duoHTML(card)}</div>
-        ${isOr() && (trendOf(card) >= 0 || bestVariant(card)) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
-        ${isOr() && when ? `<p class="hint">Mise à jour le ${esc(when)}.</p>` : ""}
+        ${trendOf(card) >= 0 || bestVariant(card) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
+        ${when ? `<p class="hint">Mise à jour le ${esc(when)}.</p>` : ""}
         ${statsHTML(card)}
         ${variantsHTML(card)}
         ${combatHTML(card)}
@@ -2884,12 +2849,7 @@ function toggleFav(id, lang = state.market) {
   const card = cache.get(cacheKey(id, lang)) || state.favorites.find((item) => item.id === id && (item.lang || "fr") === lang) || activeCards().find((item) => item.id === id);
   if (!card) return;
   if (isFav(id, lang)) state.favorites = state.favorites.filter((item) => !(item.id === id && (item.lang || "fr") === lang));
-  else if (!isOr() && state.favorites.length >= FREE_FAVS) {
-    const dialog = document.getElementById("fiche");
-    if (dialog?.open) dialog.close();
-    setTab("or");
-    return;
-  } else state.favorites.unshift(snapshot({ ...card, lang }));
+  else state.favorites.unshift(snapshot({ ...card, lang }));
   saveFavs();
   const button = document.querySelector("#fiche [data-action='fav']");
   if (button && button.dataset.id === id) {
@@ -3176,7 +3136,6 @@ function bind() {
         state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
         render();
       }
-      if (action === "invite-copy") copyInviteLink();
       if (action === "fav-sort") {
         state.favSort = actionEl.dataset.sort || "ajout";
         render();
@@ -3289,7 +3248,7 @@ function bind() {
 
   document.addEventListener("load", (event) => {
     const img = event.target;
-    if (img instanceof HTMLImageElement) img.classList.remove("is-trying");
+    if (img instanceof HTMLImageElement) img.classList.remove("is-trying", "is-broken");
   }, true);
 
   document.addEventListener("error", (event) => {
@@ -3301,6 +3260,8 @@ function bind() {
     const queue = (img.dataset.fallbacks || "").split("|").filter(Boolean);
     probeScans(img, queue);
   }, true);
+
+  window.addEventListener("pageshow", () => wakeScans(document));
 }
 
 async function recoverFromMarket(img) {
@@ -3412,10 +3373,6 @@ function boot() {
     state.browseSeriesId = "";
   }
   const params = new URLSearchParams(location.search);
-  const inviteCode = params.get("invite") || "";
-  state.guestInvite = /^[A-Z0-9]{6}$/.test(inviteCode)
-    ? { code: inviteCode, name: looseName(params.get("ami") || "").trim() }
-    : null;
   const token = params.get("voir");
   const openVisit = token
     ? decodeShare(token).then((visit) => {
@@ -3425,12 +3382,7 @@ function boot() {
     })
     : Promise.resolve();
   openVisit.then(() => {
-    const hashed = location.hash.replace("#", "");
-    const tab = state.visit
-      ? "collection"
-      : state.guestInvite && (!hashed || hashed === "cotes")
-        ? "cotes"
-        : initialTab();
+    const tab = state.visit ? "collection" : initialTab();
     rememberTab(tab);
     render();
     if (state.tab === "etb") loadSealed();

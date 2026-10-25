@@ -1,4 +1,4 @@
-const CACHE = "aureum-v21";
+const CACHE = "aureum-v22";
 const SHELL = [
   "./",
   "./index.html",

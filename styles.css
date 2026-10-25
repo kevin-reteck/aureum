@@ -481,41 +481,7 @@ select:disabled { opacity: 0.72; }
   letter-spacing: -0.03em;
 }
 .price-missing { color: var(--muted); font-size: 0.86rem; }
-.price-lock {
-  font-family: var(--serif);
-  font-weight: 560;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--gold-2);
-  font-size: 0.82rem;
-}
-.tabs [data-tab="or"] { color: var(--gold-2); }
 a.btn { display: inline-block; text-decoration: none; }
-.or-page { max-width: 680px; }
-.or-price {
-  margin: 6px 0 8px;
-  font-family: var(--serif);
-  font-weight: 560;
-  font-size: clamp(2.2rem, 5vw, 3.2rem);
-  line-height: 1;
-  color: var(--gold-2);
-}
-.or-price small {
-  font-family: var(--sans);
-  font-size: 1rem;
-  font-weight: 400;
-  color: var(--muted);
-}
-.or-list {
-  margin: 18px 0;
-  padding: 0;
-  list-style: none;
-}
-.or-list li {
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
-}
-.or-list li:last-child { border-bottom: 1px solid var(--line); }
 .delta { font-size: 0.82rem; font-weight: 600; }
 .delta.up { color: var(--up); }
 .delta.down { color: var(--down); }
@@ -616,6 +582,9 @@ a.btn { display: inline-block; text-decoration: none; }
   color: var(--gold-2);
 }
 img.is-trying { opacity: 0; }
+.art img, .stage img, .rank-art img, .coll-open img {
+  transform: translateZ(0);
+}
 
 .ranks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .ranks button {
@@ -666,9 +635,28 @@ img.is-trying { opacity: 0; }
 
 .fav-grid .tile { display: flex; flex-direction: column; gap: 8px; }
 .unfav { align-self: flex-start; }
-.coll-worth { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0 0 18px; }
-.coll-worth .price { font-size: 1.8rem; }
-.coll-form .btn { margin-top: 0; }
+.coll-worth {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(198, 161, 91, 0.35);
+  border-radius: 18px;
+  background: rgba(198, 161, 91, 0.08);
+}
+.coll-worth .price { font-size: clamp(2rem, 7vw, 2.8rem); color: var(--gold-2); }
+.coll-form {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+.coll-form .btn { margin-top: 0; justify-self: start; }
+.coll-form .note { grid-column: 1 / -1; }
 .coll-label { display: flex; flex-direction: column; gap: 6px; width: 100%; color: var(--muted); font-size: 0.84rem; }
 .coll-label input, .coll-label textarea {
   width: 100%;
@@ -678,16 +666,38 @@ img.is-trying { opacity: 0; }
   border-radius: 12px;
   padding: 10px 12px;
   font: inherit;
-  font-size: 1rem;
+  font-size: 16px;
 }
 .coll-check { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 0.92rem; }
-.coll-list { display: flex; flex-direction: column; gap: 18px; margin-top: 16px; }
-.coll-card { display: grid; grid-template-columns: 84px 1fr; gap: 8px 14px; align-items: start; }
+.coll-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+.coll-card {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 10px 14px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.02);
+}
 .coll-card .art { padding: 6px; border-radius: 12px; }
+.coll-body { min-width: 0; }
 .coll-open, .coll-title { padding: 0; border: 0; background: none; color: inherit; text-align: left; }
-.coll-title { font-family: var(--serif); font-size: 1.2rem; font-weight: 560; }
+.coll-open { width: 100%; }
+.coll-title { font-family: var(--serif); font-size: 1.25rem; font-weight: 560; }
 .coll-note { margin: 8px 0 0; white-space: pre-wrap; }
 .coll-sub { margin: 28px 0 0; font-family: var(--serif); font-weight: 560; }
+@media (min-width: 800px) {
+  .coll-list { grid-template-columns: 1fr 1fr; }
+  .coll-form { grid-template-columns: 1fr 1fr auto; align-items: end; }
+  .coll-form .coll-label,
+  .coll-form .note { grid-column: 1 / -1; }
+}
 .fav-sort {
   display: flex;
   flex-wrap: wrap;
@@ -1091,23 +1101,6 @@ dialog::backdrop {
   .fan-card:nth-child(3) { transform: none; }
 }
 
-.invite-box {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  margin: 4px 0 18px;
-  padding: 14px 16px;
-  border: 1px solid rgba(198, 161, 91, 0.35);
-  background: rgba(198, 161, 91, 0.08);
-}
-.invite-code {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: 1.7rem;
-  letter-spacing: 0.18em;
-  color: var(--gold-2);
-}
 .cote-hero {
   display: grid;
   grid-template-columns: min(240px, 42vw) 1fr;
