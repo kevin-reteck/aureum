@@ -148,17 +148,16 @@ export function aDesOrphelins() {
 
 export async function preparer() {
   comptes = lireDisque();
+  const sauvee = emailPropre(localStorage.getItem(SESSION_KEY) || "");
+  session = sauvee && comptes.users[sauvee] ? sauvee : "";
   try {
-    const reponse = await fetch(new URL("comptes.json?v=44", location.href));
+    const reponse = await fetch(new URL("comptes.json?v=45", location.href));
     if (reponse.ok) fusionner(await reponse.json());
   } catch {
     /* L'appareil garde sa copie si le fichier n'est pas joignable. */
   }
+  if (session && !comptes.users[session]) session = "";
   ecrireDisque();
-  const sauvee = emailPropre(localStorage.getItem(SESSION_KEY) || "");
-  session = sauvee && comptes.users[sauvee] ? sauvee : "";
-  if (!session) localStorage.removeItem(SESSION_KEY);
-  else localStorage.setItem(SESSION_KEY, session);
 }
 
 export function sessionActive() {
