@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=61";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=62";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -1148,7 +1148,7 @@ function extensionsHTML() {
       </header>
       <div class="toolbar"><div class="controls">${marketSelects()}</div></div>
       ${priceModeNote() ? `<p class="note">${esc(priceModeNote())}</p>` : ""}
-      <div class="series-row">${seriesButtons || `<p class="empty">Chargement des séries…</p>`}</div>
+      <div class="chip-rail"><div class="series-row">${seriesButtons || `<p class="empty">Chargement des séries…</p>`}</div></div>
       ${state.error ? `<p class="banner" role="alert">${esc(state.error)}</p>` : ""}
       ${body}
     </section>`;
@@ -1526,8 +1526,8 @@ function cotesHTML() {
         ${tri("desc", "Plus chères")}
         ${tri("asc", "Moins chères")}
       </div>
-      <div class="series-row cote-filtres" role="group" aria-label="Famille">${familles}</div>
-      <div class="series-row cote-filtres" role="group" aria-label="Génération">${generations}</div>
+      <div class="chip-rail"><div class="series-row cote-filtres" role="group" aria-label="Famille">${familles}</div></div>
+      <div class="chip-rail"><div class="series-row cote-filtres" role="group" aria-label="Génération">${generations}</div></div>
       <p class="note" id="cote-status">${esc(coteStatus(rows.length))}</p>
       <div id="cote-hall">${coteCorps(rows)}</div>
       <div class="foot-row" id="cote-foot">${coteSuite(rows.length)}</div>
@@ -1782,7 +1782,7 @@ function etbHTML() {
         <p class="lede" id="sealed-status">${esc(sealedStatus())}</p>
       </header>
       <div class="sealed-bar">
-        <div class="series-row" role="group" aria-label="Type de coffret">${filters}</div>
+        <div class="chip-rail"><div class="series-row" role="group" aria-label="Type de coffret">${filters}</div></div>
         <div class="sealed-tools">
           <label class="sr-only" for="sealed-q">Filtrer les coffrets</label>
           <input id="sealed-q" type="search" placeholder="Nom d'un coffret" value="${esc(state.sealedQuery)}" autocomplete="off" enterkeyhint="search">
@@ -2182,7 +2182,7 @@ function universHTML() {
       </header>
       <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle. La photo vient de Bulbapedia quand la page en a une. Sinon, les initiales restent.</p>
       <div class="sealed-bar">
-        <div class="series-row" role="group" aria-label="Famille">${filters}</div>
+        <div class="chip-rail"><div class="series-row" role="group" aria-label="Famille">${filters}</div></div>
         <div class="sealed-tools">
           <label class="sr-only" for="univers-q">Filtrer l'univers</label>
           <input id="univers-q" type="search" placeholder="Nom d'un jeu ou d'un jouet" value="${esc(state.universQuery)}" autocomplete="off" enterkeyhint="search">
@@ -4621,7 +4621,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=61", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=62", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
