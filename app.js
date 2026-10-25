@@ -146,6 +146,7 @@ function metaLine(card) {
   const bits = [];
   if (setName) bits.push(prettyName(setName));
   if (card.localId) bits.push(`n° ${card.localId}`);
+  if (firstEditionId(card)) bits.push("1re édition");
   if (card.rarity) bits.push(card.rarity);
   return bits.join(" · ");
 }
@@ -170,11 +171,40 @@ function artCandidates(base, size) {
   return order.flatMap((item) => [`${base}/${item}.webp`, `${base}/${item}.png`]);
 }
 
+function productId(value) {
+  if (typeof value === "number" || (typeof value === "string" && /^\d+$/.test(value))) return String(value);
+  return "";
+}
+
+function wantsFirstPrint(card) {
+  return card?.set?.id === "base1" || String(card?.id || "").startsWith("base1-");
+}
+
+function firstEditionId(card) {
+  if (!wantsFirstPrint(card)) return "";
+  const variants = Array.isArray(card?.variants_detailed) ? card.variants_detailed : [];
+  const stamped = variants.filter((variant) => {
+    const stamps = Array.isArray(variant?.stamp) ? variant.stamp : [];
+    return stamps.some((stamp) => /1re/i.test(String(stamp)));
+  });
+  if (!stamped.length) return "";
+  const direct = stamped.map((variant) => productId(variant?.thirdParty?.tcgplayer)).find(Boolean);
+  if (direct) return direct;
+  return variants.map((variant) => productId(variant?.thirdParty?.tcgplayer)).find(Boolean) || "";
+}
+
+function editionArt(card, quality) {
+  const product = firstEditionId(card);
+  if (!product) return "";
+  const px = quality === "high" ? 1000 : 400;
+  return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_in_${px}x${px}.jpg`;
+}
+
 function marketArt(card, quality) {
   const variants = Array.isArray(card?.variants_detailed) ? card.variants_detailed : [];
   const product = variants
-    .map((variant) => variant?.thirdParty?.tcgplayer)
-    .find((id) => typeof id === "number" || (typeof id === "string" && /^\d+$/.test(id)));
+    .map((variant) => productId(variant?.thirdParty?.tcgplayer))
+    .find(Boolean);
   if (!product) return "";
   const px = quality === "high" ? 1000 : 400;
   return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_in_${px}x${px}.jpg`;
@@ -182,6 +212,8 @@ function marketArt(card, quality) {
 
 function imgTag(card, size, eager) {
   const urls = artCandidates(card.image, size);
+  const edition = editionArt(card, size === "high" ? "high" : "low");
+  if (edition) urls.unshift(edition);
   const mark = esc(initials(card.name));
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
@@ -386,8 +418,15 @@ function patchCard(full) {
       slot.innerHTML = priceHTML(full);
     }
     const img = node.querySelector("img");
-    const src = safeArt(full.image, "low");
-    if (img && src && !img.getAttribute("src")) img.src = src;
+    const edition = editionArt(full, "low");
+    if (img && edition && img.getAttribute("src") !== edition && !String(img.getAttribute("src") || "").includes("tcgplayer-cdn")) {
+      img.dataset.fallbacks = artCandidates(full.image, "low").join("|");
+      img.dataset.market = "";
+      img.classList.remove("is-broken", "is-trying");
+      img.src = edition;
+    } else if (img && safeArt(full.image, "low") && !img.getAttribute("src")) {
+      img.src = safeArt(full.image, "low");
+    }
     const meta = node.querySelector("[data-slot='meta']");
     if (meta) meta.textContent = metaLine(full);
   });
@@ -528,6 +567,7 @@ function headHTML() {
       </div>
       <p class="lede" id="grille-status">${esc(bits.join(" · "))}</p>
     </header>
+    ${state.setId === "base1" ? `<p class="note">1re édition : le petit 1 est à gauche du descriptif, sous l'illustration.</p>` : ""}
     <p class="note" id="hydrate-note"></p>`;
 }
 
