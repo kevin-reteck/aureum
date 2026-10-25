@@ -1125,13 +1125,13 @@ dialog.is-leaving::backdrop {
 .relief .stage {
   width: min(320px, 74vw);
   touch-action: none;
-  transform: rotateX(var(--rx, 8deg)) rotateY(var(--ry, -14deg));
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
   transition: none;
 }
 .relief .close { position: relative; z-index: 2; justify-self: end; }
 .relief .fiche-actions { position: relative; z-index: 2; }
 .relief .shine {
-  background: radial-gradient(340px circle at var(--mx, 38%) var(--my, 24%), rgba(255, 248, 230, 0.2), transparent 46%);
+  background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 42%), rgba(255, 248, 230, 0.28), transparent 46%);
 }
 #relief.is-leaving .relief-stage {
   animation: relief-back 0.24s cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
@@ -1151,35 +1151,89 @@ dialog.is-leaving::backdrop {
   to { opacity: 0; transform: translateY(14px) scale(0.96); }
 }
 .holo {
+  --win-t: 13.8%;
+  --win-r: 12.4%;
+  --win-b: 49%;
+  --win-l: 12.2%;
+  --win-rad: 1.5%;
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background:
-    linear-gradient(108deg, transparent 8%, rgba(255, 70, 130, 0.55) 24%, rgba(255, 214, 80, 0.6) 38%, rgba(70, 255, 196, 0.52) 52%, rgba(70, 150, 255, 0.58) 66%, rgba(196, 80, 255, 0.48) 80%, transparent 94%),
-    repeating-linear-gradient(108deg, transparent 0 3px, rgba(255, 255, 255, 0.22) 3px 4px);
-  background-size: 220% 220%, auto;
-  background-position: var(--mx, 28%) var(--my, 32%), 0 0;
-  mix-blend-mode: screen;
-  opacity: 0.78;
+  overflow: hidden;
 }
-.holo[data-foil="fenetre"] { clip-path: inset(18.5% 9% 49% 9% round 2px); }
-.holo[data-foil="fenetre"][data-art="large"] { clip-path: inset(13.5% 4.5% 44% 4.5% round 2px); }
-.holo[data-foil="plein"] { opacity: 0.46; }
+.holo[data-art="large"] {
+  --win-t: 7.6%;
+  --win-r: 5%;
+  --win-b: 48%;
+  --win-l: 5%;
+  --win-rad: 1.8%;
+}
+.holo::before,
+.holo::after {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+}
+.holo::before {
+  background:
+    radial-gradient(circle at 22% 36%, rgba(255, 255, 255, 0.95) 0 0.7px, transparent 1.5px) 0 0 / 13px 17px,
+    radial-gradient(circle at 68% 58%, rgba(180, 230, 255, 0.9) 0 0.6px, transparent 1.4px) 6px 8px / 17px 13px,
+    repeating-linear-gradient(96deg, transparent 0 2px, rgba(255, 255, 255, 0.16) 2px 3px),
+    linear-gradient(
+      118deg,
+      transparent 6%,
+      rgba(255, 70, 140, 0.55) 20%,
+      rgba(255, 214, 80, 0.5) 36%,
+      rgba(70, 255, 196, 0.48) 52%,
+      rgba(70, 140, 255, 0.55) 68%,
+      rgba(196, 80, 255, 0.5) 84%,
+      transparent 96%
+    );
+  background-repeat: repeat, repeat, repeat, no-repeat;
+  background-size: 13px 17px, 17px 13px, 8px 8px, 260% 260%;
+  background-position:
+    calc(var(--mx, 50%) * 0.45) calc(var(--my, 42%) * 0.35),
+    calc(var(--mx, 50%) * -0.3) calc(var(--my, 42%) * 0.4),
+    calc(var(--mx, 50%) * -0.55) calc(var(--my, 42%) * 0.2),
+    var(--mx, 50%) var(--my, 42%);
+  mix-blend-mode: color-dodge;
+  opacity: 0.62;
+}
+.holo::after {
+  background: linear-gradient(
+    104deg,
+    transparent 34%,
+    rgba(255, 255, 255, 0.05) 43%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0.05) 57%,
+    transparent 66%
+  );
+  transform: translate3d(calc((var(--mx, 50%) - 50%) * 1.15), calc((var(--my, 42%) - 42%) * 0.55), 0);
+  mix-blend-mode: screen;
+  opacity: 0.72;
+}
+.holo[data-foil="fenetre"] {
+  clip-path: inset(var(--win-t) var(--win-r) var(--win-b) var(--win-l) round var(--win-rad));
+}
+.holo[data-foil="plein"]::before { opacity: 0.5; }
+.holo[data-foil="plein"]::after { opacity: 0.55; }
 .holo[data-foil="cadre"] {
-  opacity: 0.4;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M9 18.5H91V51H9Z'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M9 18.5H91V51H9Z'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M14 13.8H85.8A1.8 1.29 0 0 1 87.6 15.09V49.71A1.8 1.29 0 0 1 85.8 51H14A1.8 1.29 0 0 1 12.2 49.71V15.09A1.8 1.29 0 0 1 14 13.8Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M14 13.8H85.8A1.8 1.29 0 0 1 87.6 15.09V49.71A1.8 1.29 0 0 1 85.8 51H14A1.8 1.29 0 0 1 12.2 49.71V15.09A1.8 1.29 0 0 1 14 13.8Z'/%3E%3C/svg%3E");
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-size: 100% 100%;
   mask-size: 100% 100%;
 }
 .holo[data-foil="cadre"][data-art="large"] {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M4.5 13.5H95.5V56H4.5Z'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M4.5 13.5H95.5V56H4.5Z'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M7 7.6H93A2 1.43 0 0 1 95 9.03V50.57A2 1.43 0 0 1 93 52H7A2 1.43 0 0 1 5 50.57V9.03A2 1.43 0 0 1 7 7.6Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0 0H100V100H0Z M7 7.6H93A2 1.43 0 0 1 95 9.03V50.57A2 1.43 0 0 1 93 52H7A2 1.43 0 0 1 5 50.57V9.03A2 1.43 0 0 1 7 7.6Z'/%3E%3C/svg%3E");
 }
-.holo.is-quiet { opacity: 0.3; }
+.holo[data-foil="cadre"]::before { opacity: 0.48; }
+.holo.is-quiet::before { opacity: 0.34; }
+.holo.is-quiet::after { opacity: 0.2; }
 .pocket.is-full:hover .holo.is-quiet,
 .pocket.is-full:focus-visible .holo.is-quiet { opacity: 0.55; }
 .relief-name { margin: 0; font-family: var(--serif); font-size: 1.6rem; font-weight: 560; }

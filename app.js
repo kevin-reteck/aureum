@@ -1805,6 +1805,10 @@ const FULL_FACE_RARITY = [
   "galerie",
   "chromatique",
   "gold",
+  "vmax",
+  "vstar",
+  "radieux",
+  "radiant",
 ];
 
 function foilKind(card) {
@@ -1822,13 +1826,14 @@ function foilKind(card) {
   if (holo && !normal && rarity.includes("ultra")) return "plein";
   if (holo && !normal) return "fenetre";
   if (reverse && !normal && !holo) return "cadre";
-  if (/holo|vmax|vstar|double rare|ultra/.test(rarity)) return "fenetre";
+  if (/holo|double rare|ultra|rare v\b/.test(rarity)) return "fenetre";
   return "papier";
 }
 
 function artSize(card) {
   const rarity = foldText(card?.rarity);
-  if (/double rare|holo rare v|vmax|vstar/.test(rarity)) return "large";
+  if (/vmax|vstar/.test(rarity)) return "classic";
+  if (/double rare|holo rare v|rare holo v|rare v\b/.test(rarity)) return "large";
   return "classic";
 }
 
@@ -2075,13 +2080,14 @@ function stepFoilTilt() {
     foilTilt.x += (foilTilt.tx - foilTilt.x) * 0.16;
     foilTilt.y += (foilTilt.ty - foilTilt.y) * 0.16;
   }
-  const gain = (stage.dataset.foil || "papier") === "papier" ? 0.6 : 1;
-  const rx = 8 + (0.5 - foilTilt.y) * 44 * gain;
-  const ry = -14 + (foilTilt.x - 0.5) * 56 * gain;
+  const gain = (stage.dataset.foil || "papier") === "papier" ? 0.55 : 1;
+  /* 0,5 / 0,5 = téléphone tenu normalement : la carte reste face à l'écran. */
+  const rx = (0.5 - foilTilt.y) * 34 * gain;
+  const ry = (foilTilt.x - 0.5) * 42 * gain;
   stage.style.setProperty("--rx", `${rx.toFixed(2)}deg`);
   stage.style.setProperty("--ry", `${ry.toFixed(2)}deg`);
-  stage.style.setProperty("--mx", `${(50 + (foilTilt.x - 0.5) * 170).toFixed(1)}%`);
-  stage.style.setProperty("--my", `${(50 + (foilTilt.y - 0.5) * 170).toFixed(1)}%`);
+  stage.style.setProperty("--mx", `${(50 + (foilTilt.x - 0.5) * 140).toFixed(1)}%`);
+  stage.style.setProperty("--my", `${(42 + (foilTilt.y - 0.5) * 120).toFixed(1)}%`);
   const left = Math.abs(foilTilt.tx - foilTilt.x) + Math.abs(foilTilt.ty - foilTilt.y);
   if (foilTilt.finger || left > 0.003) kickFoilTilt();
 }
