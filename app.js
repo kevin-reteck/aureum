@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=42";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=43";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -2008,7 +2008,8 @@ function lockSheet() {
 }
 
 function releaseSheet() {
-  if (document.getElementById("fiche")?.open || document.getElementById("relief")?.open) return;
+  const ouvert = ["fiche", "relief", "signal", "journal"].some((id) => document.getElementById(id)?.open);
+  if (ouvert) return;
   if (!document.body.classList.contains("sheet-open")) return;
   const y = sheetScrollY;
   document.body.classList.remove("sheet-open");
@@ -3613,7 +3614,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=42", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=43", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4448,7 +4449,57 @@ function applyMarket(lang) {
   openDefaultSet();
 }
 
+const JOURNAL_ID = "1";
+const JOURNAL_KEY = "aureum.journal";
+
+function journalDejaLu() {
+  try {
+    const brut = JSON.parse(localStorage.getItem(JOURNAL_KEY) || "{}");
+    const email = emailSession();
+    return Boolean(email) && brut?.[email] === JOURNAL_ID;
+  } catch {
+    return false;
+  }
+}
+
+function marquerJournal() {
+  const email = emailSession();
+  if (!email) return;
+  let brut = {};
+  try {
+    const lu = JSON.parse(localStorage.getItem(JOURNAL_KEY) || "{}");
+    if (lu && typeof lu === "object") brut = lu;
+  } catch {
+    brut = {};
+  }
+  brut[email] = JOURNAL_ID;
+  try {
+    localStorage.setItem(JOURNAL_KEY, JSON.stringify(brut));
+  } catch {
+    /* On ferme quand même pour cette visite. */
+  }
+}
+
+function fermerJournal() {
+  marquerJournal();
+  const dialog = document.getElementById("journal");
+  if (dialog?.open) dialog.close();
+}
+
+function ouvrirJournal() {
+  if (journalDejaLu()) return;
+  const dialog = document.getElementById("journal");
+  const bouton = document.getElementById("journal-lu");
+  if (!dialog || dialog.open) return;
+  bouton?.addEventListener("click", fermerJournal, { once: true });
+  dialog.addEventListener("cancel", (event) => event.preventDefault());
+  dialog.addEventListener("close", () => unlockSheet());
+  lockSheet();
+  dialog.showModal();
+}
+
 function boot() {
+  ouvrirJournal();
   const ligne = document.getElementById("compte-ligne");
   const email = emailSession();
   if (ligne && email) {

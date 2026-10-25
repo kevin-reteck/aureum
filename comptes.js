@@ -149,7 +149,7 @@ export function aDesOrphelins() {
 export async function preparer() {
   comptes = lireDisque();
   try {
-    const reponse = await fetch(new URL("comptes.json?v=42", location.href));
+    const reponse = await fetch(new URL("comptes.json?v=43", location.href));
     if (reponse.ok) fusionner(await reponse.json());
   } catch {
     /* L'appareil garde sa copie si le fichier n'est pas joignable. */
