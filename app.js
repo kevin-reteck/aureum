@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=45";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=46";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3642,7 +3642,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=45", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=46", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4495,22 +4495,41 @@ function applyMarket(lang) {
   openDefaultSet();
 }
 
-const JOURNAL_ID = "2";
 const JOURNAL_KEY = "aureum.journal";
 
+// La liste « Nouveautés » dans index.html est le journal. En changer le texte le rouvre une fois, après la connexion.
+function texteJournal() {
+  return [...document.querySelectorAll("#journal .journal-list li")]
+    .map((item) => item.textContent.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function empreinteJournal(texte) {
+  let hash = 2166136261;
+  for (let i = 0; i < texte.length; i += 1) {
+    hash ^= texte.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
 function journalDejaLu() {
+  const texte = texteJournal();
+  const email = emailSession();
+  if (!texte || !email) return true;
   try {
     const brut = JSON.parse(localStorage.getItem(JOURNAL_KEY) || "{}");
-    const email = emailSession();
-    return Boolean(email) && brut?.[email] === JOURNAL_ID;
+    return brut?.[email] === empreinteJournal(texte);
   } catch {
     return false;
   }
 }
 
 function marquerJournal() {
+  const texte = texteJournal();
   const email = emailSession();
-  if (!email) return;
+  if (!texte || !email) return;
   let brut = {};
   try {
     const lu = JSON.parse(localStorage.getItem(JOURNAL_KEY) || "{}");
@@ -4518,7 +4537,7 @@ function marquerJournal() {
   } catch {
     brut = {};
   }
-  brut[email] = JOURNAL_ID;
+  brut[email] = empreinteJournal(texte);
   try {
     localStorage.setItem(JOURNAL_KEY, JSON.stringify(brut));
   } catch {
@@ -4542,6 +4561,7 @@ function ouvrirJournal() {
   dialog.addEventListener("close", () => unlockSheet());
   lockSheet();
   dialog.showModal();
+  bouton?.focus();
 }
 
 function boot() {

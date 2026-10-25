@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=45">
+    <link rel="stylesheet" href="styles.css?v=46">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
@@ -176,25 +176,18 @@
         </div>
       </form>
     </dialog>
-    <dialog id="journal" aria-label="Ce qui a changé">
+    <dialog id="journal" closedby="none" aria-labelledby="journal-titre">
       <div class="journal">
         <div class="journal-body">
-          <p class="kicker">Mise à jour</p>
-          <h2>Voilà ce qui a changé.</h2>
-          <p class="lede">Lis ça une fois. Ensuite, appuie sur J'ai lu en bas.</p>
+          <p class="kicker">Nouveautés</p>
+          <h2 id="journal-titre">Voilà ce qui a changé.</h2>
+          <p class="lede">Lis ça une fois. Ensuite, appuie sur J'ai lu.</p>
           <ul class="journal-list">
-            <li>La fiche va jusqu'en bas de l'écran.</li>
-            <li>La carte reste droite dans la main. Elle penche si tu bouges, ou si tu suis la lumière avec le doigt.</li>
-            <li>Le brillant reste dans l'image. Si la carte est toute holographique, ça brille partout.</li>
-            <li>Le classeur est un album : couverture, anneaux, pochettes. Tu glisses une carte pour la déplacer. Un appui l'ouvre en grand.</li>
             <li>Le brillant arrive en même temps que l'image, dans le classeur et sur la carte en grand.</li>
-            <li>Pour un problème, appuie sur l'insecte en haut, ou à côté de Fermer quand une carte est ouverte. Tu écris ce qui cloche, et une photo de l'écran part avec.</li>
+            <li>Pour un problème, l'insecte est à côté de Fermer.</li>
             <li>La carte en grand va jusqu'en bas de l'écran.</li>
             <li>Tu restes connecté quand la page se recharge.</li>
-            <li>Chacun se connecte avec son email et son mot de passe. Trois comptes au maximum.</li>
-            <li>Si tu perds le mot de passe, aucun mail ne part. C'est moi qui le remets.</li>
-            <li>Ton classeur, tes favoris et ta collection restent avec ton compte.</li>
-            <li>Collection : 30 cartes, pour garder un lien court. Classeur et favoris : autant que tu veux.</li>
+            <li>À chaque mise à jour, ce message s'ouvre une fois après la connexion.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -205,7 +198,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=45";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=46";
 
       const porte = document.getElementById("porte");
       const entrerForm = document.getElementById("porte-entrer");
@@ -227,7 +220,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=45");
+        import("./app.js?v=46");
       }
 
       function fermerPorte() {
