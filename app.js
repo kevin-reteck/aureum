@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=48";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=49";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -430,6 +430,7 @@ function metaLine(card) {
   const bits = [];
   if (setName) bits.push(prettyName(setName));
   if (card.localId) bits.push(`n° ${card.localId}`);
+  if (card.lang && card.lang !== state.market && MARKETS[card.lang]) bits.push(MARKETS[card.lang].label);
   if (firstEditionId(card)) bits.push("1re édition");
   if (card.rarity) bits.push(card.rarity);
   return bits.join(" · ");
@@ -640,7 +641,9 @@ function sortedActive() {
 }
 
 function shownCards() {
-  return sortedActive().slice(0, state.page * PAGE_SIZE);
+  const cards = sortedActive();
+  if (state.view === "set") return cards;
+  return cards.slice(0, state.page * PAGE_SIZE);
 }
 
 async function fetchJSON(path, lang = state.market) {
@@ -962,6 +965,15 @@ function toolbarHTML() {
   `;
 }
 
+function noteCatalogue() {
+  if (state.view !== "set" || state.market === "en") return "";
+  const anglais = state.setCards.filter((card) => card.lang === "en").length;
+  if (!anglais) return "";
+  if (anglais === state.setCards.length) return `<p class="note">Ces cartes viennent du catalogue anglais.</p>`;
+  const mot = anglais > 1 ? "cartes viennent" : "carte vient";
+  return `<p class="note">${anglais} ${mot} du catalogue anglais.</p>`;
+}
+
 function headHTML() {
   if (state.view === "search" && state.loading && state.searchCards.length === 0) {
     return `
@@ -1005,7 +1017,11 @@ function headHTML() {
   const title = detail ? prettyName(detail.name) : state.loading ? "Chargement…" : "Galerie";
   const bits = [];
   if (detail?.releaseDate) bits.push(formatDay(detail.releaseDate));
-  if (detail?.cardCount) bits.push(countLine(detail.cardCount));
+  if (detail?.cardCount || state.setCards.length) {
+    const official = detail?.cardCount?.official || 0;
+    const total = Math.max(detail?.cardCount?.total || 0, state.setCards.length);
+    bits.push(countLine({ official, total }));
+  }
   if (detail?.serie?.name) bits.push(prettyName(detail.serie.name));
   return `
     <header class="section-head" id="grille-titre">
@@ -1016,6 +1032,7 @@ function headHTML() {
       <p class="lede" id="grille-status">${esc(bits.join(" · "))}</p>
     </header>
     ${state.setId === "base1" ? `<p class="note">1re édition : le petit 1 est à gauche du descriptif, sous l'illustration.</p>` : ""}
+    ${noteCatalogue()}
     <p class="note" id="hydrate-note"></p>`;
 }
 
@@ -2995,6 +3012,43 @@ function growPage(kind) {
   }
 }
 
+let coteObserver = null;
+
+function suivreCotes() {
+  if (!coteObserver) {
+    coteObserver = new IntersectionObserver((entries) => {
+      const briefs = [];
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        coteObserver.unobserve(entry.target);
+        const id = entry.target.getAttribute("data-card");
+        const card = activeCards().find((item) => item.id === id);
+        if (!card?.id || cache.has(cacheKey(card.id, langueCarte(card)))) return;
+        briefs.push(card);
+      });
+      if (briefs.length) {
+        pool(briefs, 4, async (brief) => {
+          const token = epoch;
+          try {
+            const full = await getCard(brief.id, langueCarte(brief));
+            if (token !== epoch) return;
+            patchCard(full);
+          } catch {
+            /* Une carte sans cote ne bloque pas les autres. */
+          }
+        });
+      }
+    }, { rootMargin: "900px 0px" });
+  }
+  coteObserver.disconnect();
+  document.querySelectorAll("#grille .tile[data-card]").forEach((node) => {
+    const id = node.getAttribute("data-card");
+    const card = activeCards().find((item) => item.id === id);
+    if (!card?.id || cache.has(cacheKey(card.id, langueCarte(card)))) return;
+    coteObserver.observe(node);
+  });
+}
+
 function watchMore() {
   if (!moreObserver) {
     moreObserver = new IntersectionObserver((entries) => {
@@ -3004,6 +3058,7 @@ function watchMore() {
   }
   moreObserver.disconnect();
   document.querySelectorAll("[data-more]").forEach((node) => moreObserver.observe(node));
+  suivreCotes();
 }
 
 function risePage() {
@@ -3065,6 +3120,26 @@ async function loadIconics() {
   if (hall) hall.innerHTML = hallHTML();
 }
 
+async function cartesDuSet(detail, lang) {
+  const cartes = (Array.isArray(detail?.cards) ? detail.cards : [])
+    .filter((card) => card?.id)
+    .map((card) => ({ ...card, lang }));
+  const attendu = Number(detail?.cardCount?.total) || 0;
+  if (lang === "en" || cartes.length >= attendu) return cartes;
+  try {
+    const autre = await fetchJSON(`/sets/${encodeURIComponent(detail.id)}`, "en");
+    const connus = new Set(cartes.map((card) => card.id));
+    (Array.isArray(autre?.cards) ? autre.cards : []).forEach((card) => {
+      if (!card?.id || connus.has(card.id)) return;
+      connus.add(card.id);
+      cartes.push({ ...card, lang: "en" });
+    });
+  } catch {
+    /* Le catalogue de la langue choisie reste affiché. */
+  }
+  return cartes;
+}
+
 async function loadSet(seriesId, setId, { focus = true } = {}) {
   const token = ++epoch;
   const safeSeries = cleanId(seriesId, "me");
@@ -3091,8 +3166,10 @@ async function loadSet(seriesId, setId, { focus = true } = {}) {
     if (token !== epoch) return;
     state.gallerySets = sets;
     state.browseSets = sets;
+    const cartes = await cartesDuSet(detail, state.market);
+    if (token !== epoch) return;
     state.setDetail = detail;
-    state.setCards = Array.isArray(detail.cards) ? detail.cards : [];
+    state.setCards = cartes;
     state.loading = false;
     rememberContext();
     if (state.tab === "galerie") {
@@ -3131,7 +3208,7 @@ async function runSearch(raw) {
     if (token !== epoch) return;
     const rows = Array.isArray(list) ? list : [];
     state.searchTotal = rows.length;
-    state.searchCards = rows.slice(0, 48);
+    state.searchCards = rows;
     state.loading = false;
     render();
     hydrateShown(token);
@@ -3143,9 +3220,14 @@ async function runSearch(raw) {
   }
 }
 
+function langueCarte(card) {
+  return MARKETS[card?.lang] ? card.lang : state.market;
+}
+
 function cardsToHydrate() {
-  const source = state.view === "search" ? activeCards() : shownCards();
-  return source.filter((card) => card?.id);
+  const source = shownCards();
+  const slice = state.view === "set" ? source.slice(0, 24) : source;
+  return slice.filter((card) => card?.id);
 }
 
 async function hydrateShown(token) {
@@ -3166,7 +3248,7 @@ async function hydrateShown(token) {
   await pool(missing, 5, async (brief) => {
     if (token !== epoch) return;
     try {
-      const full = await getCard(brief.id);
+      const full = await getCard(brief.id, langueCarte(brief));
       if (token !== epoch) return;
       patchCard(full);
     } catch {
@@ -3214,7 +3296,7 @@ async function quoteSet() {
   await pool(sample, 5, async (brief) => {
     if (token !== quoteToken) return;
     try {
-      const full = await getCard(brief.id);
+      const full = await getCard(brief.id, langueCarte(brief));
       if (token !== quoteToken) return;
       state.quote.rows.push(full);
       state.quote.rows.sort((a, b) => trendOf(b) - trendOf(a));
@@ -3396,13 +3478,13 @@ function ficheBar() {
   return `<div class="fiche-bar">${next}${boutonBug()}<button class="close" type="button" data-action="close">Fermer</button></div>`;
 }
 
-function nextRandomId() {
+function nextRandomCard() {
   const poolCards = state.setCards.length ? state.setCards : activeCards();
-  if (!poolCards.length) return "";
+  if (!poolCards.length) return null;
   const current = document.getElementById("fiche")?.dataset.current || "";
   const others = poolCards.filter((card) => card.id !== current);
   const source = others.length ? others : poolCards;
-  return source[Math.floor(Math.random() * source.length)].id;
+  return source[Math.floor(Math.random() * source.length)];
 }
 
 function ficheHTML(card) {
@@ -3642,7 +3724,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=48", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=49", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4232,8 +4314,8 @@ function bind() {
         render();
       }
       if (action === "random" || action === "random-next") {
-        const pick = nextRandomId();
-        if (pick) openFiche(pick, "random");
+        const pick = nextRandomCard();
+        if (pick) openFiche(pick.id, { mode: "random", lang: langueCarte(pick) });
       }
       if (action === "jump") {
         document.getElementById("grille-titre")?.scrollIntoView({ behavior: motionOK ? "smooth" : "auto", block: "start" });
