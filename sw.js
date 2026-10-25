@@ -1,11 +1,11 @@
-const CACHE = "aureum-v48";
+const CACHE = "aureum-v50";
 const SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=48",
-  "./app.js?v=48",
-  "./comptes.js?v=48",
-  "./comptes.json?v=48",
+  "./styles.css?v=50",
+  "./app.js?v=50",
+  "./comptes.js?v=50",
+  "./comptes.json?v=50",
   "./sealed.json",
   "./univers.json",
   "./manifest.json",

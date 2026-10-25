@@ -1,0 +1,34 @@
+name: Signalements
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signalements
+  cancel-in-progress: false
+
+jobs:
+  ranger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/ranger-signalements.mjs
+      - name: Enregistrer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add signalements
+          if git diff --cached --quiet; then
+            echo "Rien de neuf."
+          else
+            git commit -m "Enregistre les signalements."
+            git push
+          fi

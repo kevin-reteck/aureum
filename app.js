@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=48";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=50";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3614,35 +3614,11 @@ function contexteSignal() {
   return bouts.join(" · ");
 }
 
-function texteDebrief(report) {
-  const erreurs = report.errors?.length
-    ? report.errors.map((ligne) => `- ${ligne}`).join("\n")
-    : "- Aucune erreur JavaScript récente.";
-  return [
-    "Debrief Aureum — mode Ask.",
-    "Ne modifie pas le code. Décris le symptôme, ce que montre la capture, la cause probable et une piste.",
-    "",
-    `Identifiant : ${report.id}`,
-    `Quand : ${report.when} (Paris)`,
-    `Où : ${report.where}`,
-    `Adresse : ${report.url}`,
-    `Appareil : ${report.ua}`,
-    "",
-    "Ce que la personne voit :",
-    report.text,
-    "",
-    "Erreurs :",
-    erreurs,
-    "",
-    report.shot ? `Capture jointe : signalement-${idFichier(report.id)}.jpg` : "Pas de capture.",
-  ].join("\n");
-}
-
 function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=48", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=50", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -3667,14 +3643,34 @@ function moderniserCouleur(value) {
   });
 }
 
+function remplacerScanPrive(img) {
+  const src = img.getAttribute("src") || "";
+  if (!src.includes("tcgplayer")) return;
+  const urls = (img.dataset.fallbacks || "").split("|").filter((url) => url.includes("assets.tcgdex.net"));
+  const secours = urls.find((url) => /\.(png|jpe?g)(?:$|\?)/i.test(url)) || urls[0];
+  if (!secours) return;
+  img.crossOrigin = "anonymous";
+  img.setAttribute("src", secours);
+}
+
 function figerCouleurs(doc) {
   const props = ["color", "backgroundColor", "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor", "outlineColor", "boxShadow", "backgroundImage", "textDecorationColor"];
   const vue = doc.defaultView;
-  if (document.body.classList.contains("sheet-open")) {
-    doc.querySelectorAll("header, main, footer").forEach((element) => element.remove());
-  }
+  doc.documentElement.classList.add("is-capture");
+  const corps = doc.body;
+  corps.classList.remove("sheet-open");
+  corps.style.position = "static";
+  corps.style.top = "0";
+  corps.style.left = "0";
+  doc.querySelectorAll("img").forEach(remplacerScanPrive);
+  doc.querySelectorAll("dialog[open]").forEach((dialog) => {
+    dialog.style.display = "block";
+    dialog.style.opacity = "1";
+    dialog.style.transform = "none";
+  });
   doc.querySelectorAll("*").forEach((element) => {
     const style = vue.getComputedStyle(element);
+    if (style.backdropFilter && style.backdropFilter !== "none") element.style.backdropFilter = "none";
     props.forEach((prop) => {
       const value = style[prop];
       if (value && value.includes("color(")) element.style[prop] = moderniserCouleur(value);
@@ -3682,12 +3678,28 @@ function figerCouleurs(doc) {
   });
 }
 
+function clarteToile(toile) {
+  const petit = document.createElement("canvas");
+  petit.width = 24;
+  petit.height = 40;
+  const crayon = petit.getContext("2d", { willReadFrequently: true });
+  if (!crayon) return 1;
+  crayon.drawImage(toile, 0, 0, 24, 40);
+  const data = crayon.getImageData(0, 0, 24, 40).data;
+  let clairs = 0;
+  const total = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    if ((data[i] + data[i + 1] + data[i + 2]) / 3 > 46) clairs += 1;
+  }
+  return total ? clairs / total : 0;
+}
+
 async function priseEcran() {
   const html2canvas = await chargerCapture();
   const width = Math.max(1, Math.round(window.innerWidth));
   const height = Math.max(1, Math.round(window.innerHeight));
   const feuille = document.body.classList.contains("sheet-open");
-  const toile = await html2canvas(document.body, {
+  const options = {
     x: feuille ? 0 : window.scrollX,
     y: feuille ? 0 : window.scrollY,
     width,
@@ -3696,14 +3708,79 @@ async function priseEcran() {
     windowHeight: height,
     scrollX: feuille ? 0 : window.scrollX,
     scrollY: feuille ? 0 : window.scrollY,
-    scale: Math.min(1.5, 520 / width),
+    scale: 1,
     useCORS: true,
     backgroundColor: "#0b0a08",
     logging: false,
-    ignoreElements: (element) => element.id === "signal" || element.id === "porte",
+    imageTimeout: 4000,
+    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote",
     onclone: figerCouleurs,
-  });
-  return toile.toDataURL("image/jpeg", 0.62);
+  };
+  let toile;
+  try {
+    toile = await html2canvas(document.body, options);
+  } catch {
+    toile = null;
+  }
+  const scansPrives = document.querySelector("img[src*='tcgplayer']");
+  if (!toile || clarteToile(toile) < 0.08 || scansPrives) {
+    const hote = document.createElement("div");
+    hote.id = "capture-hote";
+    hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:1;`;
+    const ouvert = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open);
+    const entete = ouvert ? "" : (document.querySelector("header")?.outerHTML || "");
+    hote.innerHTML = `${entete}${ouvert?.innerHTML || document.querySelector("main")?.innerHTML || ""}`;
+    document.body.appendChild(hote);
+    try {
+      hote.querySelectorAll("img").forEach((img) => {
+        if (img.getBoundingClientRect().top > height + 40) {
+          img.remove();
+          return;
+        }
+        const src = img.getAttribute("src") || "";
+        const urls = src.includes("tcgplayer")
+          ? (img.dataset.fallbacks || "").split("|").filter((url) => url.includes("assets.tcgdex.net"))
+          : [];
+        const secours = urls[0] || "";
+        img.removeAttribute("src");
+        img.crossOrigin = "anonymous";
+        img.setAttribute("src", secours || src);
+      });
+      await Promise.all([...hote.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
+      hote.querySelectorAll("img").forEach((img) => {
+        if (!img.naturalWidth) return;
+        const copie = document.createElement("canvas");
+        copie.width = img.naturalWidth;
+        copie.height = img.naturalHeight;
+        try {
+          copie.getContext("2d").drawImage(img, 0, 0);
+          img.src = copie.toDataURL("image/jpeg", 0.82);
+        } catch {
+          /* Le scan privé reste vide : la photo publique ne peut pas le copier. */
+        }
+      });
+      const autre = await html2canvas(hote, {
+        ...options,
+        x: 0,
+        y: 0,
+        scrollX: 0,
+        scrollY: 0,
+        ignoreElements: (element) => element.id === "signal" || element.id === "porte",
+        onclone: (doc) => {
+          figerCouleurs(doc);
+          const copie = doc.getElementById("capture-hote");
+          if (copie) copie.style.opacity = "1";
+        },
+      });
+      if (!toile || ouvert || clarteToile(autre) >= clarteToile(toile)) toile = autre;
+    } catch {
+      /* La première photo reste si le second essai échoue. */
+    } finally {
+      hote.remove();
+    }
+  }
+  if (!toile) throw new Error("capture");
+  return toile.toDataURL("image/jpeg", 0.6);
 }
 
 function brouillonSignal(shot) {
@@ -3713,30 +3790,176 @@ function brouillonSignal(shot) {
     where: contexteSignal(),
     url: location.href,
     ua: navigator.userAgent,
-    errors: [...(window.aureumErreurs || [])],
+    errors: [...(window.aureumErreurs || [])].slice(0, 6),
+    qui: emailSession() || "",
     text: "",
     shot: shot || "",
   };
 }
 
+const NTFY_TOPIC = "aureum-signalements-k7m3p9";
+let signauxVisibles = [];
+
+function srcVisuel(report) {
+  const local = srcCapture(report?.shot);
+  if (local) return local;
+  if (typeof report?.image === "string" && /^[\w.-]+\.jpg$/.test(report.image)) {
+    return new URL(`signalements/${report.image}`, location.href).href;
+  }
+  if (typeof report?.file === "string" && report.file.startsWith("https://ntfy.sh/file/")) return report.file;
+  return "";
+}
+
+function fusionSignaux(listes) {
+  const map = new Map();
+  listes.flat().forEach((report) => {
+    if (!report?.id) return;
+    const deja = map.get(report.id) || {};
+    map.set(report.id, {
+      ...deja,
+      ...report,
+      shot: report.shot || deja.shot || "",
+      file: report.file || deja.file || "",
+      image: report.image || deja.image || "",
+      text: report.text || deja.text || "",
+    });
+  });
+  return [...map.values()].sort((a, b) => String(b.id).localeCompare(String(a.id)));
+}
+
+async function lireDepot() {
+  try {
+    const reponse = await fetch(new URL("signalements/journal.json", location.href), { cache: "no-store" });
+    if (!reponse.ok) return [];
+    const data = await reponse.json();
+    return Array.isArray(data?.reports) ? data.reports : [];
+  } catch {
+    return [];
+  }
+}
+
+async function lireNtfy() {
+  try {
+    const reponse = await fetch(`https://ntfy.sh/${NTFY_TOPIC}/json?poll=1&since=24h`);
+    if (!reponse.ok) return [];
+    const texte = await reponse.text();
+    const rapports = [];
+    texte.split("\n").forEach((ligne) => {
+      if (!ligne.trim()) return;
+      let evenement;
+      try {
+        evenement = JSON.parse(ligne);
+      } catch {
+        return;
+      }
+      if (evenement?.event !== "message") return;
+      const corps = decoderMessage(evenement.message);
+      if (!corps) return;
+      if (corps?.cabinet !== "aureum" || !corps.id || !corps.text) return;
+      const file = evenement.attachment?.url;
+      rapports.push({
+        id: String(corps.id),
+        when: String(corps.when || ""),
+        where: String(corps.where || ""),
+        url: String(corps.url || ""),
+        qui: String(corps.qui || ""),
+        text: String(corps.text),
+        errors: Array.isArray(corps.errors) ? corps.errors.map((item) => String(item)) : [],
+        file: typeof file === "string" && file.startsWith("https://ntfy.sh/file/") ? file : "",
+        image: "",
+        shot: "",
+      });
+    });
+    return rapports;
+  } catch {
+    return [];
+  }
+}
+
+async function chargerSignaux() {
+  const [depot, frais] = await Promise.all([lireDepot(), lireNtfy()]);
+  signauxVisibles = fusionSignaux([depot, frais, lireSignaux()]);
+  paintSignaux();
+}
+
+function messageSignal(report) {
+  return JSON.stringify({
+    cabinet: "aureum",
+    id: report.id,
+    when: report.when,
+    where: report.where,
+    url: report.url,
+    qui: emailSession() || "",
+    text: report.text,
+    errors: (report.errors || []).slice(0, 6).map((ligne) => String(ligne).slice(0, 240)),
+  });
+}
+
+function coderMessage(report) {
+  const octets = new TextEncoder().encode(messageSignal(report));
+  let binaire = "";
+  octets.forEach((octet) => {
+    binaire += String.fromCharCode(octet);
+  });
+  return `b64:${btoa(binaire)}`;
+}
+
+function decoderMessage(message) {
+  if (typeof message !== "string" || !message) return null;
+  try {
+    let json = message;
+    if (message.startsWith("b64:")) {
+      const binaire = atob(message.slice(4));
+      const octets = Uint8Array.from(binaire, (caractere) => caractere.charCodeAt(0));
+      json = new TextDecoder().decode(octets);
+    }
+    const corps = JSON.parse(json);
+    return corps && typeof corps === "object" ? corps : null;
+  } catch {
+    return null;
+  }
+}
+
+async function publierNtfy(report) {
+  const message = coderMessage(report);
+  const headers = { Title: report.id, Message: message };
+  let body = message;
+  const src = srcCapture(report.shot);
+  if (src) {
+    const image = await fetch(src);
+    body = await image.blob();
+    headers.Filename = `signalement-${idFichier(report.id)}.jpg`;
+    headers["Content-Type"] = "image/jpeg";
+  }
+  const reponse = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, { method: "POST", body, headers });
+  if (!reponse.ok) throw new Error(String(reponse.status));
+  const data = await reponse.json();
+  const file = data?.attachment?.url;
+  return typeof file === "string" && file.startsWith("https://ntfy.sh/file/") ? file : "";
+}
+
+function memoriserSignal(report) {
+  const leger = { ...report, shot: report.file || report.image ? "" : (report.shot || "") };
+  const autres = lireSignaux().filter((item) => item.id !== report.id);
+  return ecrireSignaux([leger, ...autres]);
+}
+
 function paintSignaux() {
   const liste = document.getElementById("signal-list");
   if (!liste) return;
-  const signaux = lireSignaux();
-  if (!signaux.length) {
-    liste.innerHTML = `<p class="hint signal-vide">Aucun signalement sur cet appareil.</p>`;
+  if (!signauxVisibles.length) {
+    liste.innerHTML = `<p class="hint signal-vide">Aucun signalement.</p>`;
     return;
   }
-  liste.innerHTML = signaux.map((report) => {
-    const src = srcCapture(report.shot);
+  liste.innerHTML = signauxVisibles.map((report) => {
+    const src = srcVisuel(report);
     return `
     <div class="signal-item">
-      ${src ? `<img src="${src}" alt="">` : `<span class="signal-manque" aria-hidden="true"></span>`}
-      <button class="signal-voir" type="button" data-signal="voir" data-id="${esc(report.id)}">
-        <strong>${esc(report.when)}</strong>
-        <span>${esc(report.text)}</span>
-      </button>
-      <button class="text-btn" type="button" data-signal="retirer" data-id="${esc(report.id)}">Retirer</button>
+      ${src ? `<img src="${esc(src)}" alt="">` : `<span class="signal-manque" aria-hidden="true"></span>`}
+      <div class="signal-voir">
+        <strong>${esc(report.when || "Signalement")}</strong>
+        <span>${esc(report.text || "")}</span>
+      </div>
     </div>`;
   }).join("");
 }
@@ -3759,44 +3982,36 @@ function montrerSignal(report, note) {
   if (ligne && note) ligne.textContent = note;
 }
 
-function poserCapture(report, shot) {
-  report.shot = shot || "";
-  const apercu = document.getElementById("signal-apercu");
-  const ligne = document.getElementById("signal-note");
-  if (apercu) {
-    const src = srcCapture(report.shot);
-    apercu.src = src;
-    apercu.hidden = !src;
-  }
-  if (ligne) {
-    ligne.textContent = shot
-      ? "La photo est prise. Décris ce qui cloche, puis garde ou partage."
-      : "La photo n'a pas pu être prise. Le texte suffit.";
-  }
-}
+let signalOuverture = false;
 
 async function ouvrirSignal() {
   const dialog = document.getElementById("signal");
-  if (!dialog || dialog.open) return;
+  if (!dialog || dialog.open || signalOuverture) return;
+  signalOuverture = true;
   const report = brouillonSignal("");
-  montrerSignal(report, "Décris ce qui cloche. La photo de l'écran arrive.");
-  const texte = document.getElementById("signal-texte");
-  if (texte) texte.value = "";
-  paintSignaux();
-  dialog.showModal();
-  texte?.focus();
   let shot = "";
   try {
     shot = await Promise.race([
       priseEcran(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 5000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 14000)),
     ]);
   } catch {
     shot = "";
+  } finally {
+    signalOuverture = false;
   }
-  if (!dialog.open || signalCourant !== report) return;
-  poserCapture(report, shot);
+  if (dialog.open) return;
+  report.shot = shot || "";
+  montrerSignal(report, shot
+    ? "La photo est prise. Dis ce qui cloche, puis envoie."
+    : "La photo n'a pas pu être prise. Le texte suffit.");
+  const texte = document.getElementById("signal-texte");
+  if (texte) texte.value = "";
+  paintSignaux();
+  dialog.showModal();
   lockSheet();
+  texte?.focus();
+  chargerSignaux();
 }
 
 function fermerSignal() {
@@ -3811,51 +4026,6 @@ function reportDepuisFormulaire() {
   return { ...base, text: texte };
 }
 
-function garderSignal(report) {
-  if (!report.text) return false;
-  const autres = lireSignaux().filter((item) => item.id !== report.id);
-  const ok = ecrireSignaux([report, ...autres]);
-  paintSignaux();
-  return ok;
-}
-
-async function fichierCapture(report) {
-  const src = srcCapture(report.shot);
-  if (!src) return null;
-  const reponse = await fetch(src);
-  const blob = await reponse.blob();
-  return new File([blob], `signalement-${idFichier(report.id)}.jpg`, { type: "image/jpeg" });
-}
-
-function telecharger(nom, contenu, type) {
-  const url = URL.createObjectURL(new Blob([contenu], { type }));
-  const lien = document.createElement("a");
-  lien.href = url;
-  lien.download = nom;
-  lien.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
-}
-
-async function partagerSignal(report) {
-  const texte = texteDebrief(report);
-  const fichier = await fichierCapture(report);
-  const fichiers = fichier ? [fichier] : [];
-  if (navigator.share && (!fichiers.length || !navigator.canShare || navigator.canShare({ files: fichiers }))) {
-    try {
-      await navigator.share({ title: "Signalement Aureum", text: texte, files: fichiers });
-      return "partage";
-    } catch (error) {
-      if (error?.name === "AbortError") return "annule";
-    }
-  }
-  try {
-    await navigator.clipboard.writeText(texte);
-  } catch { /* Le téléchargement reste la copie de secours. */ }
-  telecharger(`signalement-${idFichier(report.id)}.md`, texte, "text/markdown");
-  if (fichier) telecharger(fichier.name, fichier, fichier.type);
-  return "fichier";
-}
-
 function bindSignal() {
   document.addEventListener("click", (event) => {
     if (!event.target.closest?.("[data-signaler]")) return;
@@ -3863,56 +4033,38 @@ function bindSignal() {
   });
   const dialog = document.getElementById("signal");
   const form = document.getElementById("signal-form");
-  form?.addEventListener("submit", (event) => {
+  form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const report = reportDepuisFormulaire();
     if (!report.text) return;
-    const ok = garderSignal(report);
-    signalCourant = report;
+    const bouton = form.querySelector("[type='submit']");
     const note = document.getElementById("signal-note");
-    if (note) {
-      note.textContent = ok
-        ? "Signalement gardé sur cet appareil. Partagez-le à Cursor pour un debrief."
-        : "Le navigateur refuse d'enregistrer davantage. Partagez celui-ci tout de suite.";
+    if (bouton) {
+      bouton.disabled = true;
+      bouton.textContent = "Envoi…";
+    }
+    try {
+      const file = await publierNtfy(report);
+      memoriserSignal({ ...report, file, shot: "" });
+      if (note) note.textContent = "Envoyé. Tout le monde le voit dans les signalements.";
+      const texte = document.getElementById("signal-texte");
+      if (texte) texte.value = "";
+      signalCourant = brouillonSignal("");
+      await chargerSignaux();
+    } catch {
+      memoriserSignal(report);
+      signauxVisibles = fusionSignaux([signauxVisibles, lireSignaux()]);
+      paintSignaux();
+      if (note) note.textContent = "L'envoi n'a pas abouti. Le signalement reste sur cet appareil.";
+    } finally {
+      if (bouton) {
+        bouton.disabled = false;
+        bouton.textContent = "Envoyer";
+      }
     }
   });
-  dialog?.addEventListener("click", async (event) => {
-    const bouton = event.target.closest("[data-signal]");
-    if (!bouton) return;
-    const action = bouton.dataset.signal;
-    if (action === "close") {
-      fermerSignal();
-      return;
-    }
-    if (action === "retirer") {
-      ecrireSignaux(lireSignaux().filter((item) => item.id !== bouton.dataset.id));
-      paintSignaux();
-      return;
-    }
-    if (action === "voir") {
-      const report = lireSignaux().find((item) => item.id === bouton.dataset.id);
-      if (!report) return;
-      montrerSignal(report, "Signalement rouvert. Vous pouvez le repartager à Cursor.");
-      const texte = document.getElementById("signal-texte");
-      if (texte) texte.value = report.text;
-      return;
-    }
-    if (action === "partager") {
-      const report = reportDepuisFormulaire();
-      if (!report.text) {
-        const note = document.getElementById("signal-note");
-        if (note) note.textContent = "Écrivez d'abord ce qui cloche.";
-        document.getElementById("signal-texte")?.focus();
-        return;
-      }
-      garderSignal(report);
-      signalCourant = report;
-      const suite = await partagerSignal(report);
-      const note = document.getElementById("signal-note");
-      if (!note) return;
-      if (suite === "partage") note.textContent = "Partage ouvert. Dans Cursor, mode Ask : collez le texte et la capture pour un debrief.";
-      else if (suite === "fichier") note.textContent = "Debrief téléchargé. Déposez le .md et la .jpg dans signalements/, ou joignez-les au chat Cursor en mode Ask.";
-    }
+  dialog?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-signal='close']")) fermerSignal();
   });
   dialog?.addEventListener("close", () => {
     unlockSheet();
