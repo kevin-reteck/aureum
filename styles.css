@@ -716,8 +716,10 @@ img.shot { opacity: 1; }
   font-family: var(--serif);
   color: var(--gold);
   font-size: 1.15rem;
-  width: 2ch;
+  min-width: 2ch;
 }
+.rank-copy { min-width: 0; }
+.rank-name, .rank-meta, .cote-name { overflow-wrap: anywhere; }
 .rank-art {
   position: relative;
   width: 46px;
@@ -726,6 +728,9 @@ img.shot { opacity: 1; }
   overflow: hidden;
   background: #16130f;
 }
+.rank-art.is-box { aspect-ratio: 1; }
+.cote-filtres { padding-bottom: 8px; }
+.cote-open.is-box .art { aspect-ratio: 1; }
 .rank-art img { width: 100%; height: 100%; object-fit: contain; }
 .rank-val { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .rank-val .price { font-family: var(--serif); font-size: 1.25rem; font-weight: 560; }

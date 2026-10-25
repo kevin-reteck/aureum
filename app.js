@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=55";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=56";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -156,10 +156,12 @@ const state = {
   visit: null,
   shareNote: "",
   hallCards: [],
-  hallOrder: [],
   hallLoading: false,
   hallFailed: false,
-  coteMode: "tendance",
+  coteSort: "desc",
+  coteFamille: "cartes",
+  coteGen: "toutes",
+  cotePage: 1,
   binder: loadBinder(),
   binderSlot: null,
   binderQuery: "",
@@ -398,6 +400,9 @@ function repaintUsdTab() {
     else render();
   } else if (state.tab === "univers") {
     if (document.getElementById("univers-grid")) paintUnivers();
+    else render();
+  } else if (state.tab === "cotes") {
+    if (document.getElementById("cote-hall")) paintCotes();
     else render();
   }
   paintOpenProduct();
@@ -1181,26 +1186,69 @@ function quoteHTML() {
     ${quote.rows.length ? rankList(quote.rows) : ""}`;
 }
 
-function shuffleIds(ids) {
-  const copy = ids.slice();
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const swap = copy[i];
-    copy[i] = copy[j];
-    copy[j] = swap;
-  }
-  return copy;
+const COTES_FAMILLES = [
+  ["tout", "Tout"],
+  ["cartes", "Cartes"],
+  ["etb", "ETB"],
+  ["coffret", "Coffrets"],
+  ["upc", "UPC"],
+];
+
+const COTES_GENS = [
+  ["me", "Méga-Évolution", ["me"]],
+  ["sv", "Écarlate et Violet", ["sv"]],
+  ["swsh", "Épée et Bouclier", ["swsh"]],
+  ["sm", "Soleil et Lune", ["sm"]],
+  ["xy", "XY", ["xy"]],
+  ["bw", "Noir et Blanc", ["bw"]],
+  ["hgss", "HeartGold SoulSilver", ["hgss", "col"]],
+  ["dp", "Diamant et Perle", ["dp", "pl", "pop"]],
+  ["ex", "EX", ["ex"]],
+  ["neo", "Neo", ["neo", "ecard"]],
+  ["base", "Set de base", ["base", "gym", "lc"]],
+];
+
+const SERIE_PREFIXES = ["swsh", "hgss", "ecard", "base", "gym", "neo", "pop", "col", "bw", "xy", "sm", "sv", "me", "dp", "pl", "ex", "lc"];
+
+function serieDepuisId(setId) {
+  const id = String(setId || "").toLowerCase();
+  return SERIE_PREFIXES.find((prefix) => id === prefix || id.startsWith(prefix)) || "";
 }
 
-function orderedHall() {
-  const cards = state.hallCards.slice();
-  if (state.coteMode === "melange") {
-    const order = new Map(state.hallOrder.map((id, index) => [id, index]));
-    cards.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
-    return cards;
-  }
-  cards.sort((a, b) => trendOf(b) - trendOf(a));
-  return cards;
+function genDepuisSerie(serie) {
+  const hit = COTES_GENS.find(([, , series]) => series.includes(serie));
+  return hit ? hit[0] : "";
+}
+
+function carteGen(card) {
+  const setId = card?.set?.id || String(card?.id || "").split("-")[0];
+  return genDepuisSerie(serieDepuisId(setId));
+}
+
+function sealedGen(item) {
+  const set = String(item?.set || "");
+  if (/^ME\d|^ME:/.test(set) || set === "First Partner Collection 2026") return "me";
+  if (/^SV\d|^SV:/.test(set)) return "sv";
+  if (/^SWSH|^Pokemon GO$|^Celebrations$|^Champion's Path$|^Shining Fates$/.test(set)) return "swsh";
+  if (/^SM\b|^SM -|^Hidden Fates$|^Shining Legends$|^Dragon Majesty$|^Detective Pikachu$/.test(set)) return "sm";
+  if (/^XY\b|^XY -|^Generations$/.test(set)) return "xy";
+  if (set === "Next Destinies" || set === "Emerging Powers") return "bw";
+  if (set === "Southern Islands") return "base";
+  return "";
+}
+
+function coteGenNom(id) {
+  if (id === "autres") return "hors série connue";
+  const hit = COTES_GENS.find(([gen]) => gen === id);
+  return hit ? hit[1] : "";
+}
+
+function coteVeutCartes(famille = state.coteFamille) {
+  return famille === "tout" || famille === "cartes";
+}
+
+function coteVeutBoites(famille = state.coteFamille) {
+  return famille !== "cartes";
 }
 
 function dearLine(card) {
@@ -1242,23 +1290,207 @@ async function loadHall() {
   });
   if (token !== hallEpoch) return;
   state.hallCards = rows;
-  state.hallOrder = shuffleIds(rows.map((card) => card.id));
   state.hallFailed = rows.length === 0;
   state.hallLoading = false;
   if (state.tab === "cotes") render();
 }
 
+function coteNom(row) {
+  return row.kind === "carte" ? prettyName(row.card.name) : String(row.item?.name || "");
+}
+
+function coteEntries(famille = state.coteFamille, gen = state.coteGen) {
+  const rows = [];
+  if (coteVeutCartes(famille)) {
+    state.hallCards.forEach((card) => {
+      const groupe = carteGen(card);
+      if (gen === "autres") return;
+      if (gen !== "toutes" && groupe !== gen) return;
+      const euro = trendOf(card);
+      rows.push({ kind: "carte", euro: euro >= 0 ? euro : null, card });
+    });
+  }
+  if (coteVeutBoites(famille) && Array.isArray(state.sealed)) {
+    state.sealed.forEach((item) => {
+      if (typeof item.usd !== "number") return;
+      if (famille === "etb" || famille === "coffret" || famille === "upc") {
+        if (item.kind !== famille) return;
+      }
+      const groupe = sealedGen(item);
+      if (gen === "autres") {
+        if (groupe) return;
+      } else if (gen !== "toutes" && groupe !== gen) return;
+      const euro = typeof item.usd === "number" ? boxEuro(item.usd) : null;
+      rows.push({ kind: "boite", euro, item });
+    });
+  }
+  const dir = state.coteSort === "asc" ? 1 : -1;
+  rows.sort((a, b) => {
+    const aManque = typeof a.euro !== "number";
+    const bManque = typeof b.euro !== "number";
+    if (aManque !== bManque) return aManque ? 1 : -1;
+    if (!aManque && a.euro !== b.euro) return (a.euro - b.euro) * dir;
+    if (aManque && bManque && a.kind === "boite" && b.kind === "boite") {
+      const au = typeof a.item.usd === "number" ? a.item.usd : -1;
+      const bu = typeof b.item.usd === "number" ? b.item.usd : -1;
+      if (au !== bu) return (au - bu) * dir;
+    }
+    return coteNom(a).localeCompare(coteNom(b), "fr");
+  });
+  return rows;
+}
+
+function coteAttente() {
+  const cartes = coteVeutCartes();
+  const boites = coteVeutBoites();
+  if (boites && !state.sealed && !state.sealedError) return "Ouverture des coffrets…";
+  if (boites && state.sealed && usdDisplayMode() === "pending") return "Conversion des cotes en euros…";
+  if (cartes && !state.hallFailed && !state.hallCards.length) return "Lecture des cotes…";
+  return "";
+}
+
+function cotePhrase() {
+  const sens = state.coteSort === "asc" ? "de la moins chère à la plus chère" : "de la plus chère à la moins chère";
+  const gen = state.coteGen === "toutes" ? "" : coteGenNom(state.coteGen);
+  let sujet = "Tout mélangé";
+  if (state.coteFamille === "cartes") sujet = "Cartes de l'étagère";
+  else if (state.coteFamille === "etb") sujet = "ETB";
+  else if (state.coteFamille === "coffret") sujet = "Coffrets";
+  else if (state.coteFamille === "upc") sujet = "UPC";
+  return `${gen ? `${sujet}, ${gen}` : sujet}, ${sens}`;
+}
+
+function coteSource() {
+  if (state.coteFamille === "cartes") return "Cotes Cardmarket en euros.";
+  if (state.sealedError && !state.sealed) return "Les coffrets n'ont pas pu être chargés.";
+  const mode = usdDisplayMode();
+  if (mode === "usd") {
+    if (state.coteFamille === "tout") return "Cartes Cardmarket en euros. Coffrets TCGPlayer en dollars.";
+    return "Cotes TCGPlayer en dollars. Pas une cote Cardmarket.";
+  }
+  if (mode === "unavailable") return "Cotes TCGPlayer en dollars. La conversion en euros est indisponible.";
+  if (state.coteFamille === "tout") return "Cartes Cardmarket en euros. Coffrets TCGPlayer convertis en euros.";
+  return "Cotes TCGPlayer converties en euros. Pas une cote Cardmarket.";
+}
+
+function coteStatus(total) {
+  if (coteAttente()) return coteAttente();
+  if (!total) return `Rien dans ce filtre. ${cotePhrase()}.`;
+  const shown = Math.min(state.cotePage * PAGE_SIZE, total);
+  const compte = shown < total ? `${shown} sur ${total}` : String(total);
+  return `${compte}. ${cotePhrase()}. ${coteSource()}`;
+}
+
+function coteHeroBox(item, euro) {
+  const dear = typeof euro === "number" && euro >= DEAR_EUR;
+  const prix = typeof item.usd === "number" ? usdPlain(item.usd) : "";
+  const meta = [sealedLabel(item.kind), item.set].filter(Boolean).join(" · ");
+  return `
+    <article class="cote-hero${dear ? " is-dear" : ""}">
+      <button class="cote-open is-box" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
+        <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
+          <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="" decoding="async">
+        </span>
+      </button>
+      <div>
+        ${dear ? `<p class="cote-wow">Elle coûte cher.</p>` : ""}
+        <p class="cote-price">${esc(prix)}</p>
+        <h3 class="cote-name">${esc(item.name)}</h3>
+        <p class="tile-meta">${esc(meta)}</p>
+        <p class="note">Cote TCGPlayer. Pas une offre.</p>
+      </div>
+    </article>`;
+}
+
+function coteRang(row, index) {
+  const rang = String(index + 1).padStart(2, "0");
+  if (row.kind === "carte") {
+    const card = row.card;
+    return `
+      <li>
+        <button type="button" data-open="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">
+          <span class="rank">${rang}</span>
+          <span class="rank-art" data-label="${esc(initials(card.name))}">${imgTag(card, "low", false)}</span>
+          <span class="rank-copy">
+            <span class="rank-name">${esc(prettyName(card.name))}</span>
+            <span class="rank-meta">${esc(metaLine(card))}</span>
+          </span>
+          <span class="rank-val">${priceHTML(card)}</span>
+        </button>
+      </li>`;
+  }
+  const item = row.item;
+  const meta = [sealedLabel(item.kind), item.set].filter(Boolean).join(" · ");
+  const prix = typeof item.usd === "number" ? usdHTML(item.usd) : `<span class="price-missing">Cote indisponible</span>`;
+  return `
+    <li>
+      <button type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
+        <span class="rank">${rang}</span>
+        <span class="rank-art is-box" data-label="${esc(sealedLabel(item.kind))}">
+          <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="" decoding="async">
+        </span>
+        <span class="rank-copy">
+          <span class="rank-name">${esc(item.name)}</span>
+          <span class="rank-meta">${esc(meta)}</span>
+        </span>
+        <span class="rank-val">${prix}</span>
+      </button>
+    </li>`;
+}
+
+function coteCorps(rows) {
+  const attente = coteAttente();
+  if (attente) return `<p class="note">${esc(attente)}</p>${skeletonRanks(4)}`;
+  if (coteVeutCartes() && state.hallFailed && !state.hallCards.length && state.coteFamille === "cartes") {
+    return `<p class="note">Les cotes ne répondent pas. Rouvre la salle dans un instant.</p>`;
+  }
+  if (coteVeutBoites() && state.sealedError && !state.sealed && state.coteFamille !== "tout") {
+    return `<p class="note">${esc(state.sealedError)} <button class="btn" type="button" data-action="sealed-retry">Réessayer</button></p>`;
+  }
+  if (!rows.length) return `<p class="note">Rien dans ce filtre.</p>`;
+  const shown = rows.slice(0, state.cotePage * PAGE_SIZE);
+  const premier = shown[0];
+  const hero = premier.kind === "carte" ? coteHero(premier.card) : coteHeroBox(premier.item, premier.euro);
+  const suite = shown.slice(1).map((row, index) => coteRang(row, index + 1)).join("");
+  const alerte = state.coteFamille === "tout" && state.sealedError && !state.sealed
+    ? `<p class="note">${esc(state.sealedError)} <button class="btn" type="button" data-action="sealed-retry">Réessayer</button></p>`
+    : "";
+  return `${alerte}${hero}${suite ? `<ol class="ranks">${suite}</ol>` : ""}`;
+}
+
+function coteSuite(total) {
+  if (coteAttente() || state.cotePage * PAGE_SIZE >= total) return "";
+  return `<div class="more-sentinel" data-more="cotes"></div>`;
+}
+
+function paintCotes() {
+  const hall = document.getElementById("cote-hall");
+  const foot = document.getElementById("cote-foot");
+  const status = document.getElementById("cote-status");
+  if (!hall || !foot || !status) {
+    render();
+    return;
+  }
+  const rows = coteEntries();
+  status.textContent = coteStatus(rows.length);
+  hall.innerHTML = coteCorps(rows);
+  foot.innerHTML = coteSuite(rows.length);
+  watchMore();
+  wakeScans(hall);
+}
+
 function cotesHTML() {
-  const cards = orderedHall();
-  const hero = cards[0] ? coteHero(cards[0]) : "";
-  const rest = cards.length > 1 ? rankList(cards.slice(1), 1) : "";
-  const pending = !cards.length && !state.hallFailed;
-  const body = pending
-    ? `<p class="note">Lecture des cotes, de 1999 à aujourd'hui…</p>${skeletonRanks(4)}`
-    : cards.length
-      ? `${hero}${rest}`
-      : `<p class="note">Les cotes ne répondent pas. Rouvre la salle dans un instant.</p>`;
-  const mode = (id, label) => `<button class="fav-sort-btn" type="button" data-action="cote-mode" data-mode="${id}" aria-pressed="${state.coteMode === id ? "true" : "false"}">${label}</button>`;
+  const rows = coteEntries();
+  const tri = (id, label) => `<button class="fav-sort-btn" type="button" data-action="cote-sort" data-sort="${id}" aria-pressed="${state.coteSort === id ? "true" : "false"}">${label}</button>`;
+  const familles = COTES_FAMILLES.map(([id, label]) => `
+    <button type="button" data-action="cote-famille" data-famille="${id}" aria-pressed="${state.coteFamille === id ? "true" : "false"}">${label}</button>`).join("");
+  const gens = [["toutes", "Toutes"]];
+  COTES_GENS.forEach(([id, label]) => {
+    if (coteEntries(state.coteFamille, id).length || state.coteGen === id) gens.push([id, label]);
+  });
+  if (coteEntries(state.coteFamille, "autres").length || state.coteGen === "autres") gens.push(["autres", "Autres"]);
+  const generations = gens.map(([id, label]) => `
+    <button type="button" data-action="cote-gen" data-gen="${id}" aria-pressed="${state.coteGen === id ? "true" : "false"}">${label}</button>`).join("");
   const setName = prettyName(state.setDetail?.name || "l'extension");
   const running = Boolean(state.quote?.running);
   const label = running
@@ -1273,14 +1505,17 @@ function cotesHTML() {
           <p class="kicker">Référence</p>
           <h2>Salle des cotes.</h2>
         </div>
-        <p class="lede">Les plus fortes tendances Cardmarket, de 1999 à aujourd'hui. Le mélange reprend les mêmes cartes, dans un autre ordre.</p>
+        <p class="lede">Ce n'est pas la sélection du jour, et l'heure de Paris n'y change rien. Les cartes forment une étagère fixe, cotée sur Cardmarket. Tu peux tout mélanger avec les ETB, coffrets et UPC, ou ne garder qu'une génération.</p>
       </header>
-      <div class="fav-sort" role="group" aria-label="Ordre de la salle">
-        ${mode("tendance", "Par tendance")}
-        ${mode("melange", "Toutes les années")}
-        ${state.coteMode === "melange" ? `<button class="fav-sort-btn" type="button" data-action="cote-shuffle">Mélanger encore</button>` : ""}
+      <div class="fav-sort" role="group" aria-label="Sens de la cote">
+        ${tri("desc", "Plus chères")}
+        ${tri("asc", "Moins chères")}
       </div>
-      <div id="cote-hall">${body}</div>
+      <div class="series-row cote-filtres" role="group" aria-label="Famille">${familles}</div>
+      <div class="series-row cote-filtres" role="group" aria-label="Génération">${generations}</div>
+      <p class="note" id="cote-status">${esc(coteStatus(rows.length))}</p>
+      <div id="cote-hall">${coteCorps(rows)}</div>
+      <div class="foot-row" id="cote-foot">${coteSuite(rows.length)}</div>
     </section>
     <section class="panel">
       <header class="section-head">
@@ -1573,6 +1808,7 @@ async function loadSealed() {
       state.sealedLoading = false;
       sealedPromise = null;
       if (state.tab === "etb") render();
+      else if (state.tab === "cotes" && state.coteFamille !== "cartes") render();
     }
   })();
   return sealedPromise;
@@ -3216,6 +3452,12 @@ function growPage(kind) {
     state.universPage += 1;
     paintUnivers();
     wakeScans(document.getElementById("app") || document);
+    return;
+  }
+  if (kind === "cotes") {
+    if (state.cotePage * PAGE_SIZE >= coteEntries().length) return;
+    state.cotePage += 1;
+    paintCotes();
   }
 }
 
@@ -3287,7 +3529,7 @@ function setTab(tab) {
       history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
   }
-  if ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD") loadFx();
+  if (tab === "cotes" || ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD")) loadFx();
   rememberTab(tab);
   render();
   if (changed) risePage();
@@ -3307,7 +3549,11 @@ function setTab(tab) {
     loadUnivers();
     settleUsdFx("univers");
   }
-  if (tab === "cotes") loadHall();
+  if (tab === "cotes") {
+    loadHall();
+    loadSealed();
+    settleUsdFx("cotes");
+  }
 }
 
 async function loadIconics() {
@@ -3923,7 +4169,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=55", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=56", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4735,17 +4981,33 @@ function bind() {
       }
       if (action === "coll-share") copyCollectionLink();
       if (action === "coll-mine") leaveVisit();
-      if (action === "cote-mode") {
-        state.coteMode = actionEl.dataset.mode === "melange" ? "melange" : "tendance";
-        if (state.coteMode === "melange" && !state.hallOrder.length) {
-          state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
-        }
+      if (action === "cote-sort") {
+        state.coteSort = actionEl.dataset.sort === "asc" ? "asc" : "desc";
+        state.cotePage = 1;
         render();
       }
-      if (action === "cote-shuffle") {
-        state.coteMode = "melange";
-        state.hallOrder = shuffleIds(state.hallCards.map((card) => card.id));
-        render();
+      if (action === "cote-famille") {
+        const famille = actionEl.dataset.famille;
+        if (COTES_FAMILLES.some(([id]) => id === famille)) {
+          state.coteFamille = famille;
+          state.cotePage = 1;
+          if (famille !== "cartes") {
+            loadSealed();
+            settleUsdFx("cotes");
+          }
+          const pret = famille === "cartes" ? state.hallCards.length > 0 || state.hallFailed : Array.isArray(state.sealed);
+          if (pret && state.coteGen !== "toutes" && !coteEntries(famille, state.coteGen).length) state.coteGen = "toutes";
+          render();
+        }
+      }
+      if (action === "cote-gen") {
+        const gen = actionEl.dataset.gen || "toutes";
+        const connu = gen === "toutes" || gen === "autres" || COTES_GENS.some(([id]) => id === gen);
+        if (connu) {
+          state.coteGen = gen;
+          state.cotePage = 1;
+          render();
+        }
       }
       if (action === "fav-sort") {
         state.favSort = actionEl.dataset.sort || "ajout";
@@ -5163,9 +5425,12 @@ function boot() {
       refreshCollection();
       if (collectionHasBox()) loadFx().then(() => paintCollectionPrices());
     }
-    if (state.tab === "cotes") loadHall();
+    if (state.tab === "cotes") {
+      loadHall();
+      loadSealed();
+    }
     fxReady.then(() => {
-      if (state.tab === "etb" || state.tab === "univers") repaintUsdTab();
+      if (state.tab === "etb" || state.tab === "univers" || state.tab === "cotes") repaintUsdTab();
       else if (activeCurrency() !== "EUR" && (state.tab === "galerie" || state.tab === "cotes")) render();
       paintOpenProduct();
       paintCollectionPrices();
