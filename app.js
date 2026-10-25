@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=54";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=55";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3923,7 +3923,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=54", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=55", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4526,20 +4526,26 @@ function bind() {
   document.addEventListener("pointerdown", (event) => {
     const pocket = event.target.closest?.("[data-pocket]");
     if (!pocket || state.tab !== "classeur") return;
+    if (event.button != null && event.button !== 0) return;
     const index = Number(pocket.dataset.pocket);
-    const id = state.binder.pages[state.binder.page]?.[index];
-    if (!id || (event.button != null && event.button !== 0)) return;
-    event.preventDefault();
-    lift = { id, from: index, x: event.clientX, y: event.clientY, moved: false, pointerId: event.pointerId };
-    pocket.setPointerCapture?.(event.pointerId);
+    const id = state.binder.pages[state.binder.page]?.[index] || "";
+    lift = { id, from: index, x: event.clientX, y: event.clientY, moved: false, scrolling: false, pointerId: event.pointerId, pocket };
   });
 
   document.addEventListener("pointermove", (event) => {
-    if (!lift || event.pointerId !== lift.pointerId) return;
+    if (!lift || event.pointerId !== lift.pointerId || lift.scrolling) return;
     const dx = event.clientX - lift.x;
     const dy = event.clientY - lift.y;
-    if (!lift.moved && dx * dx + dy * dy < 64) return;
-    lift.moved = true;
+    if (!lift.moved) {
+      if (dx * dx + dy * dy < 64) return;
+      if (!lift.id || Math.abs(dy) >= Math.abs(dx)) {
+        lift.scrolling = true;
+        return;
+      }
+      lift.moved = true;
+      lift.pocket?.setPointerCapture?.(lift.pointerId);
+    }
+    event.preventDefault();
     showGhost(lift.id, event.clientX, event.clientY);
   });
 
@@ -4548,8 +4554,12 @@ function bind() {
     const current = lift;
     lift = null;
     hideGhost();
+    if (current.scrolling) {
+      suppressPocketClick = true;
+      return;
+    }
     if (!current.moved) {
-      openRelief(current.id, current.from);
+      if (current.id) openRelief(current.id, current.from);
       return;
     }
     suppressPocketClick = true;

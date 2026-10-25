@@ -1124,7 +1124,7 @@ dialog.is-leaving::backdrop {
   overflow: hidden;
   position: relative;
   color: var(--muted);
-  touch-action: none;
+  touch-action: pan-y;
 }
 .pocket::after {
   content: "";
