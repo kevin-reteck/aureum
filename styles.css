@@ -771,6 +771,115 @@ dialog::backdrop {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 .fiche-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+.binder-book { perspective: 1800px; margin-top: 8px; }
+.binder-sheet {
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  background: linear-gradient(90deg, #3a2c1c 0 18px, #1a140e 18px);
+  border-radius: 6px 18px 18px 6px;
+  padding: 14px 12px 14px 28px;
+  box-shadow: 0 28px 50px rgba(0, 0, 0, 0.48);
+}
+.binder-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.pocket {
+  aspect-ratio: 63 / 88;
+  border: 1px dashed rgba(240, 215, 162, 0.28);
+  border-radius: 8px;
+  background: #0c0b09;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  color: var(--muted);
+  touch-action: none;
+}
+.pocket.is-full { border-style: solid; border-color: transparent; }
+.pocket.is-chosen { outline: 2px solid var(--gold-2); outline-offset: 2px; }
+.pocket-empty {
+  font-family: var(--serif);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pocket-card { display: block; width: 100%; height: 100%; position: relative; }
+.pocket-card img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; }
+.binder-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.binder-search { margin-top: 16px; max-width: 420px; }
+.binder-search .field input {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  font: inherit;
+}
+.binder-hits { display: flex; gap: 10px; overflow-x: auto; margin-top: 12px; padding-bottom: 6px; }
+.binder-hit {
+  flex: 0 0 92px;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--paper);
+  padding: 0;
+  font-size: 0.78rem;
+  text-align: center;
+}
+.binder-hit-art { width: 100%; aspect-ratio: 63 / 88; border-radius: 8px; overflow: hidden; background: #16130f; }
+.binder-hit-art img { width: 100%; height: 100%; object-fit: cover; }
+#binder-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 84px;
+  z-index: 40;
+  pointer-events: none;
+  filter: drop-shadow(0 14px 16px rgba(0, 0, 0, 0.5));
+}
+#binder-ghost img { width: 100%; height: auto; border-radius: 8px; }
+#relief {
+  width: min(440px, calc(100vw - 24px));
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.relief { position: relative; display: grid; justify-items: center; gap: 12px; padding: 18px 8px 8px; }
+.relief-stage { perspective: 900px; }
+.stage.is-holo {
+  width: min(320px, 74vw);
+  transform: rotateX(var(--rx, 8deg)) rotateY(var(--ry, -16deg));
+  transition: transform 0.08s linear;
+}
+.relief .close { position: static; justify-self: end; }
+.holo {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(118deg, transparent 12%, rgba(255, 70, 130, 0.72) 30%, rgba(255, 220, 70, 0.75) 42%, rgba(70, 255, 190, 0.7) 54%, rgba(70, 150, 255, 0.75) 66%, rgba(210, 70, 255, 0.65) 78%, transparent 92%),
+    repeating-linear-gradient(118deg, transparent 0 2px, rgba(255, 255, 255, 0.35) 2px 3px);
+  background-size: 240% 240%, auto;
+  background-position: var(--mx, 30%) var(--my, 24%), 0 0;
+  mix-blend-mode: screen;
+  opacity: 1;
+}
+.holo.is-quiet { opacity: 0.42; }
+.pocket.is-full:hover .holo.is-quiet,
+.pocket.is-full:focus-visible .holo.is-quiet { opacity: 0.72; }
+.relief-name { margin: 0; font-family: var(--serif); font-size: 1.6rem; font-weight: 560; }
+@media (max-width: 720px) {
+  .binder-sheet { padding: 10px 8px 10px 18px; }
+  .binder-grid { gap: 6px; }
+}
 .fiche-error { padding: 48px 24px; text-align: center; }
 .pending { padding: 48px 24px; color: var(--muted); }
 

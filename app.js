@@ -2,7 +2,9 @@ const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
 const CTX_KEY = "aureum.contexte";
 const FREE_FAVS = 3;
-const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris"];
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "classeur"];
+const BINDER_KEY = "aureum.classeur";
+const POCKETS = 9;
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
 const ICONIC_IDS = ["swsh7-215", "base1-4", "base1-2", "base1-15", "base1-10", "base1-6", "sv03.5-205", "base1-58"];
@@ -58,6 +60,10 @@ const state = {
   iconics: [],
   iconicsReady: false,
   favorites: loadFavs(),
+  binder: loadBinder(),
+  binderSlot: null,
+  binderQuery: "",
+  binderHits: [],
   browseSeriesId: "me",
   browseSets: [],
   browseLoading: false,
@@ -1163,6 +1169,345 @@ async function loadUnivers() {
 }
 
 
+function emptyPage() {
+  return Array.from({ length: POCKETS }, () => null);
+}
+
+function loadBinder() {
+  const fresh = () => ({ page: 0, pages: [emptyPage(), emptyPage()], cards: {} });
+  try {
+    const raw = JSON.parse(localStorage.getItem(BINDER_KEY) || "null");
+    const cards = raw && raw.cards && typeof raw.cards === "object" ? raw.cards : {};
+    const source = Array.isArray(raw?.pages) ? raw.pages : [];
+    const pages = source.map((page) => Array.from({ length: POCKETS }, (_, index) => {
+      const id = cleanId(page?.[index], "");
+      return id && cards[id]?.name ? id : null;
+    }));
+    if (!pages.length) return fresh();
+    const page = Math.min(Math.max(0, Number(raw?.page) || 0), pages.length - 1);
+    return { page, pages, cards };
+  } catch {
+    return fresh();
+  }
+}
+
+function saveBinder() {
+  localStorage.setItem(BINDER_KEY, JSON.stringify({
+    page: state.binder.page,
+    pages: state.binder.pages,
+    cards: state.binder.cards,
+  }));
+}
+
+function binderFind(id) {
+  const pages = state.binder?.pages || [];
+  for (let page = 0; page < pages.length; page += 1) {
+    const slot = pages[page].indexOf(id);
+    if (slot >= 0) return { page, slot };
+  }
+  return null;
+}
+
+function binderCount() {
+  return state.binder.pages.reduce((sum, page) => sum + page.filter(Boolean).length, 0);
+}
+
+function binderLabel() {
+  const page = state.binder.pages[state.binder.page] || [];
+  const here = page.filter(Boolean).length;
+  const total = binderCount();
+  const ici = here === 0
+    ? "aucune carte sur cette page"
+    : `${here} ${here > 1 ? "cartes" : "carte"} sur cette page`;
+  const ailleurs = total === here ? "" : ` · ${total} ${total > 1 ? "cartes" : "carte"} dans le classeur`;
+  return `Page ${state.binder.page + 1} sur ${state.binder.pages.length} · ${ici}${ailleurs}`;
+}
+
+function firstHole(start = state.binder.page) {
+  const pages = state.binder.pages;
+  for (let step = 0; step < pages.length; step += 1) {
+    const page = (start + step) % pages.length;
+    const slot = pages[page].indexOf(null);
+    if (slot >= 0) return { page, slot };
+  }
+  return null;
+}
+
+function pocketHTML(id, index) {
+  const chosen = state.binderSlot === index ? " is-chosen" : "";
+  const card = id ? state.binder.cards[id] : null;
+  if (!card) {
+    return `<button type="button" class="pocket${chosen}" data-pocket="${index}"><span class="pocket-empty">Libre</span></button>`;
+  }
+  return `<button type="button" class="pocket is-full${chosen}" data-pocket="${index}" aria-label="${esc(prettyName(card.name))}">
+    <span class="pocket-card">${imgTag(card, "low", false)}<span class="holo is-quiet" aria-hidden="true"></span></span>
+  </button>`;
+}
+
+function binderHitsHTML() {
+  if (state.binderQuery.trim().length < 2) return "";
+  if (!state.binderHits.length) return `<p class="note">Aucune carte ne porte ce nom.</p>`;
+  return state.binderHits.map((card) => `
+    <button type="button" class="binder-hit" data-binder="place" data-id="${esc(card.id)}">
+      <span class="binder-hit-art">${imgTag(card, "low", false)}</span>
+      <span>${esc(prettyName(card.name))}</span>
+    </button>`).join("");
+}
+
+function paintBinder() {
+  const grid = document.getElementById("binder-grid");
+  const status = document.getElementById("binder-status");
+  const hits = document.getElementById("binder-hits");
+  const drop = document.getElementById("binder-drop");
+  if (!grid || !status || !hits) {
+    render();
+    return;
+  }
+  const page = state.binder.pages[state.binder.page] || emptyPage();
+  grid.innerHTML = page.map((id, index) => pocketHTML(id, index)).join("");
+  status.textContent = binderLabel();
+  hits.innerHTML = binderHitsHTML();
+  if (drop) {
+    const empty = page.every((id) => !id);
+    drop.hidden = !(empty && state.binder.pages.length > 1);
+  }
+}
+
+function binderHTML() {
+  const page = state.binder.pages[state.binder.page] || emptyPage();
+  const empty = page.every((id) => !id);
+  return `
+    <section class="panel binder">
+      <header class="section-head">
+        <div>
+          <p class="kicker">Classeur</p>
+          <h2>Tes cartes, page après page.</h2>
+        </div>
+        <p class="lede" id="binder-status">${esc(binderLabel())}</p>
+      </header>
+      <div class="binder-book">
+        <div class="binder-sheet" id="binder-sheet">
+          <div class="binder-grid" id="binder-grid">${page.map((id, index) => pocketHTML(id, index)).join("")}</div>
+        </div>
+      </div>
+      <div class="binder-nav">
+        <button class="btn" type="button" data-binder="prev">Précédente</button>
+        <button class="btn" type="button" data-binder="next">Suivante</button>
+      </div>
+      <p class="hint">Glisse une carte pour la déplacer, même vers la page d'à côté. Un clic l'ouvre en relief : le reflet holographique suit le doigt.</p>
+      <div class="binder-nav">
+        <button class="btn" type="button" data-binder="add-page">Ajouter une page</button>
+        <button class="btn" type="button" id="binder-drop" data-binder="drop-page"${empty && state.binder.pages.length > 1 ? "" : " hidden"}>Retirer cette page</button>
+      </div>
+      <form class="binder-search" id="binder-form">
+        <label class="field">Ranger une carte
+          <input id="binder-q" type="search" placeholder="Nom d'une carte" autocomplete="off" enterkeyhint="search" value="${esc(state.binderQuery)}">
+        </label>
+      </form>
+      <div class="binder-hits" id="binder-hits">${binderHitsHTML()}</div>
+    </section>`;
+}
+
+function reliefHTML(card, slot) {
+  return `
+    <div class="relief">
+      <button class="close" type="button" data-action="close">Fermer</button>
+      <div class="relief-stage">
+        <div class="stage is-holo" data-tilt data-label="${esc(initials(card.name))}">
+          ${imgTag(card, "high", true)}
+          <span class="holo" aria-hidden="true"></span>
+          <span class="shine" aria-hidden="true"></span>
+        </div>
+      </div>
+      <p class="relief-name">${esc(prettyName(card.name))}</p>
+      <p class="hint">Penche la carte : le reflet holographique suit le mouvement.</p>
+      <div class="fiche-actions">
+        <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}">Voir la fiche</button>
+        <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
+      </div>
+    </div>`;
+}
+
+function openRelief(id, slot) {
+  const card = state.binder.cards[id];
+  const dialog = document.getElementById("relief");
+  if (!card || !dialog) return;
+  dialog.innerHTML = reliefHTML(card, slot);
+  if (!dialog.open) dialog.showModal();
+}
+
+function turnBinder(dir) {
+  const next = state.binder.page + dir;
+  if (next < 0 || next >= state.binder.pages.length) return;
+  const sheet = document.getElementById("binder-sheet");
+  const apply = () => {
+    state.binder.page = next;
+    state.binderSlot = null;
+    saveBinder();
+    paintBinder();
+  };
+  if (!sheet || !motionOK) {
+    apply();
+    return;
+  }
+  const finish = () => {
+    sheet.removeEventListener("transitionend", finish);
+    apply();
+    sheet.style.transition = "none";
+    sheet.style.transform = `rotateY(${dir > 0 ? 68 : -68}deg)`;
+    requestAnimationFrame(() => {
+      sheet.style.transition = "transform .32s ease";
+      sheet.style.transform = "rotateY(0deg)";
+    });
+  };
+  sheet.style.transition = "transform .28s ease";
+  sheet.style.transform = `rotateY(${dir > 0 ? -72 : 72}deg)`;
+  sheet.addEventListener("transitionend", finish);
+}
+
+function movePocket(from, to) {
+  const page = state.binder.pages[state.binder.page];
+  if (!page || from === to || to < 0 || to >= POCKETS) return;
+  const held = page[from];
+  page[from] = page[to];
+  page[to] = held;
+  saveBinder();
+  paintBinder();
+}
+
+function moveToPage(from, dir) {
+  const next = state.binder.page + dir;
+  if (next < 0 || next >= state.binder.pages.length) return;
+  const id = state.binder.pages[state.binder.page][from];
+  if (!id) return;
+  const slot = state.binder.pages[next].indexOf(null);
+  if (slot < 0) return;
+  state.binder.pages[state.binder.page][from] = null;
+  state.binder.pages[next][slot] = id;
+  state.binder.page = next;
+  state.binderSlot = null;
+  saveBinder();
+  paintBinder();
+}
+
+function forgetCard(id) {
+  const still = state.binder.pages.some((page) => page.includes(id));
+  if (!still) delete state.binder.cards[id];
+}
+
+function removeSlot(pageIndex, slot) {
+  const page = state.binder.pages[pageIndex];
+  if (!page) return;
+  const id = page[slot];
+  if (!id) return;
+  page[slot] = null;
+  forgetCard(id);
+  saveBinder();
+  paintBinder();
+}
+
+function rangerCard(card) {
+  const found = binderFind(card.id);
+  if (found) {
+    state.binder.page = found.page;
+    saveBinder();
+    setTab("classeur");
+    return;
+  }
+  let hole = firstHole(0);
+  if (!hole) {
+    state.binder.pages.push(emptyPage());
+    hole = { page: state.binder.pages.length - 1, slot: 0 };
+  }
+  state.binder.page = hole.page;
+  state.binder.pages[hole.page][hole.slot] = card.id;
+  state.binder.cards[card.id] = snapshot(card);
+  saveBinder();
+  setTab("classeur");
+}
+
+let binderTimer = 0;
+let lift = null;
+let suppressPocketClick = false;
+
+function showGhost(id, x, y) {
+  let ghost = document.getElementById("binder-ghost");
+  if (!ghost) {
+    ghost = document.createElement("div");
+    ghost.id = "binder-ghost";
+    ghost.setAttribute("aria-hidden", "true");
+    document.body.appendChild(ghost);
+  }
+  const card = state.binder.cards[id];
+  if (card && ghost.dataset.id !== id) {
+    ghost.dataset.id = id;
+    ghost.innerHTML = imgTag(card, "low", true);
+  }
+  ghost.hidden = false;
+  ghost.style.transform = `translate(${Math.round(x - 42)}px, ${Math.round(y - 58)}px)`;
+}
+
+function hideGhost() {
+  const ghost = document.getElementById("binder-ghost");
+  if (ghost) ghost.hidden = true;
+}
+
+async function placeBinderCard(id) {
+  const safe = cleanId(id, "");
+  if (!safe) return;
+  let card = state.binder.cards[safe] || cache.get(safe);
+  if (!card?.image) {
+    try {
+      card = await getCard(safe);
+    } catch {
+      return;
+    }
+  }
+  let page = state.binder.page;
+  let slot = state.binderSlot;
+  if (slot == null || state.binder.pages[page]?.[slot]) {
+    const hole = firstHole(page);
+    if (!hole) {
+      state.binder.pages.push(emptyPage());
+      page = state.binder.pages.length - 1;
+      slot = 0;
+    } else {
+      page = hole.page;
+      slot = hole.slot;
+    }
+  }
+  state.binder.page = page;
+  state.binder.pages[page][slot] = card.id;
+  state.binder.cards[card.id] = snapshot(card);
+  state.binderSlot = null;
+  state.binderHits = [];
+  state.binderQuery = "";
+  saveBinder();
+  const input = document.getElementById("binder-q");
+  if (input) input.value = "";
+  paintBinder();
+}
+
+async function searchBinder(raw) {
+  const query = String(raw || "").trim();
+  state.binderQuery = query;
+  if (query.length < 2) {
+    state.binderHits = [];
+    paintBinder();
+    return;
+  }
+  try {
+    const list = await fetchJSON(`/cards?name=${encodeURIComponent(query)}`);
+    const rows = Array.isArray(list) ? list : [];
+    if (state.binderQuery !== query) return;
+    state.binderHits = rows.slice(0, 8);
+  } catch {
+    if (state.binderQuery !== query) return;
+    state.binderHits = [];
+  }
+  paintBinder();
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
@@ -1171,6 +1516,7 @@ function render() {
   else if (state.tab === "etb") app.innerHTML = etbHTML();
   else if (state.tab === "univers") app.innerHTML = universHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
+  else if (state.tab === "classeur") app.innerHTML = binderHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
@@ -1566,6 +1912,7 @@ function ficheHTML(card) {
         ${Array.isArray(card.dexId) && card.dexId.length ? `<p class="hint">Pokédex n° ${esc(card.dexId.join(", "))}</p>` : ""}
         <div class="fiche-actions">
           <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
+          <button class="btn" type="button" data-action="binder-add" data-id="${esc(card.id)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
         </div>
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
       </div>
@@ -1638,6 +1985,10 @@ function bind() {
       state.sealedPage = 1;
       paintSealed();
     }
+    if (event.target.id === "binder-q") {
+      clearTimeout(binderTimer);
+      binderTimer = setTimeout(() => searchBinder(event.target.value), 280);
+    }
     if (event.target.id === "univers-q") {
       state.universQuery = event.target.value;
       state.universPage = 1;
@@ -1667,11 +2018,71 @@ function bind() {
     input.focus();
   });
 
+  document.addEventListener("submit", (event) => {
+    if (event.target.id !== "binder-form") return;
+    event.preventDefault();
+    clearTimeout(binderTimer);
+    searchBinder(document.getElementById("binder-q")?.value);
+  });
+
+  const relief = document.getElementById("relief");
+  relief?.addEventListener("click", (event) => {
+    if (event.target === relief) relief.close();
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    const pocket = event.target.closest?.("[data-pocket]");
+    if (!pocket || state.tab !== "classeur") return;
+    const index = Number(pocket.dataset.pocket);
+    const id = state.binder.pages[state.binder.page]?.[index];
+    if (!id || (event.button != null && event.button !== 0)) return;
+    event.preventDefault();
+    lift = { id, from: index, x: event.clientX, y: event.clientY, moved: false, pointerId: event.pointerId };
+    pocket.setPointerCapture?.(event.pointerId);
+  });
+
+  document.addEventListener("pointermove", (event) => {
+    if (!lift || event.pointerId !== lift.pointerId) return;
+    const dx = event.clientX - lift.x;
+    const dy = event.clientY - lift.y;
+    if (!lift.moved && dx * dx + dy * dy < 64) return;
+    lift.moved = true;
+    showGhost(lift.id, event.clientX, event.clientY);
+  });
+
+  document.addEventListener("pointerup", (event) => {
+    if (!lift || event.pointerId !== lift.pointerId) return;
+    const current = lift;
+    lift = null;
+    hideGhost();
+    if (!current.moved) {
+      openRelief(current.id, current.from);
+      return;
+    }
+    suppressPocketClick = true;
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    const pocket = under?.closest?.("[data-pocket]");
+    if (pocket) {
+      movePocket(current.from, Number(pocket.dataset.pocket));
+      return;
+    }
+    const nav = under?.closest?.("[data-binder]");
+    if (nav?.dataset.binder === "next") moveToPage(current.from, 1);
+    if (nav?.dataset.binder === "prev") moveToPage(current.from, -1);
+  });
+
+  document.addEventListener("pointercancel", () => {
+    lift = null;
+    hideGhost();
+  });
+
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog.close();
   });
 
   document.addEventListener("click", (event) => {
+    const binderEl = event.target.closest("[data-binder]");
+    const pocketEl = event.target.closest("[data-pocket]");
     const actionEl = event.target.closest("[data-action]");
     const setEl = event.target.closest("[data-set]");
     const seriesEl = event.target.closest("[data-series]");
@@ -1679,6 +2090,49 @@ function bind() {
     const sealedEl = event.target.closest("[data-sealed]");
     const universEl = event.target.closest("[data-univers]");
     const openEl = event.target.closest("[data-open]");
+    if (suppressPocketClick) {
+      suppressPocketClick = false;
+      return;
+    }
+    if (binderEl && state.tab === "classeur") {
+      const kind = binderEl.dataset.binder;
+      if (kind === "prev") turnBinder(-1);
+      if (kind === "next") turnBinder(1);
+      if (kind === "add-page") {
+        state.binder.pages.push(emptyPage());
+        state.binder.page = state.binder.pages.length - 1;
+        state.binderSlot = null;
+        saveBinder();
+        paintBinder();
+      }
+      if (kind === "drop-page") {
+        const page = state.binder.pages[state.binder.page];
+        if (page && page.every((id) => !id) && state.binder.pages.length > 1) {
+          state.binder.pages.splice(state.binder.page, 1);
+          state.binder.page = Math.min(state.binder.page, state.binder.pages.length - 1);
+          state.binderSlot = null;
+          saveBinder();
+          paintBinder();
+        }
+      }
+      if (kind === "place") placeBinderCard(binderEl.dataset.id);
+      if (kind === "remove") {
+        const slot = Number(binderEl.dataset.slot);
+        document.getElementById("relief")?.close();
+        removeSlot(state.binder.page, slot);
+      }
+      return;
+    }
+    if (pocketEl && state.tab === "classeur") {
+      const index = Number(pocketEl.dataset.pocket);
+      const id = state.binder.pages[state.binder.page]?.[index];
+      if (!id) {
+        state.binderSlot = index;
+        paintBinder();
+        document.getElementById("binder-q")?.focus();
+      }
+      return;
+    }
     if (sealedEl) {
       if (sealedEl.dataset.sealed === "kind") {
         state.sealedKind = sealedEl.dataset.kind || "tous";
@@ -1704,7 +2158,7 @@ function bind() {
 
     if (actionEl) {
       const action = actionEl.dataset.action;
-      if (action === "close") dialog.close();
+      if (action === "close") actionEl.closest("dialog")?.close();
       if (action === "more") {
         state.page += 1;
         renderGrid();
@@ -1728,6 +2182,17 @@ function bind() {
         loadUnivers();
       }
       if (action === "fav") toggleFav(actionEl.dataset.id);
+      if (action === "binder-add") {
+        const card = cache.get(actionEl.dataset.id);
+        if (card) {
+          dialog.close();
+          rangerCard(card);
+        }
+      }
+      if (action === "open-fiche") {
+        document.getElementById("relief")?.close();
+        openFiche(actionEl.dataset.id);
+      }
       if (action === "unfav") {
         state.favorites = state.favorites.filter((item) => item.id !== actionEl.dataset.id);
         saveFavs();
@@ -1785,8 +2250,15 @@ function bind() {
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target;
+    if (state.tab === "classeur" && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
+      if (dialog.open || document.getElementById("relief")?.open) return;
+      event.preventDefault();
+      turnBinder(event.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
+    if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
     if (dialog.open) return;
     event.preventDefault();
@@ -1798,10 +2270,11 @@ function bind() {
     const stage = event.target.closest?.("[data-tilt]");
     if (!stage) return;
     const rect = stage.getBoundingClientRect();
+    const strong = stage.classList.contains("is-holo");
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
-    stage.style.setProperty("--rx", `${(0.5 - y) * 8}deg`);
-    stage.style.setProperty("--ry", `${(x - 0.5) * 10}deg`);
+    stage.style.setProperty("--rx", `${(0.5 - y) * (strong ? 18 : 8)}deg`);
+    stage.style.setProperty("--ry", `${(x - 0.5) * (strong ? 26 : 10)}deg`);
     stage.style.setProperty("--mx", `${x * 100}%`);
     stage.style.setProperty("--my", `${y * 100}%`);
   });
