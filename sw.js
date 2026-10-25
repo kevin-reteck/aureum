@@ -1,11 +1,11 @@
-const CACHE = "aureum-v50";
+const CACHE = "aureum-v51";
 const SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=50",
-  "./app.js?v=50",
-  "./comptes.js?v=50",
-  "./comptes.json?v=50",
+  "./styles.css?v=51",
+  "./app.js?v=51",
+  "./comptes.js?v=51",
+  "./comptes.json?v=51",
   "./sealed.json",
   "./univers.json",
   "./manifest.json",
@@ -25,7 +25,12 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((fenetres) => {
+        const version = CACHE.slice("aureum-v".length);
+        fenetres.forEach((fenetre) => fenetre.postMessage({ type: "aureum-recharge", version }));
+      }),
   );
 });
 

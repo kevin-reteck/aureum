@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=50">
+    <link rel="stylesheet" href="styles.css?v=51">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
@@ -35,6 +35,67 @@
         const raison = event.reason;
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
+
+      const VERSION_PAGE = "51";
+      let rechargeEnCours = false;
+
+      function saisieEnCours() {
+        const dialog = document.getElementById("signal");
+        const texte = document.getElementById("signal-texte");
+        return Boolean(dialog?.open && texte?.value.trim());
+      }
+
+      function rechargerPourMaj(version) {
+        if (rechargeEnCours || saisieEnCours()) return;
+        if (version && sessionStorage.getItem("aureum.maj") === version) return;
+        if (version) sessionStorage.setItem("aureum.maj", version);
+        rechargeEnCours = true;
+        location.reload();
+      }
+
+      async function verifierMaj() {
+        if (rechargeEnCours || saisieEnCours()) return;
+        try {
+          const reponse = await fetch(new URL("sw.js", location.href), { cache: "no-store" });
+          if (!reponse.ok) return;
+          const trouve = (await reponse.text()).match(/const CACHE = "aureum-v(\d+)"/);
+          const version = trouve ? trouve[1] : "";
+          if (!version || version === VERSION_PAGE) return;
+          rechargerPourMaj(version);
+        } catch (error) { /* Hors ligne : la page ouverte reste. */ }
+      }
+
+      function demanderSw() {
+        if (!("serviceWorker" in navigator)) return;
+        navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
+      }
+
+      if ("serviceWorker" in navigator) {
+        const avaitUnSw = Boolean(navigator.serviceWorker.controller);
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (avaitUnSw) rechargerPourMaj();
+        });
+        navigator.serviceWorker.addEventListener("message", (event) => {
+          const version = event.data?.type === "aureum-recharge" ? String(event.data.version || "") : "";
+          if (!version || version === VERSION_PAGE) return;
+          rechargerPourMaj(version);
+        });
+      }
+
+      function surveillerMaj() {
+        demanderSw();
+        verifierMaj();
+      }
+
+      window.addEventListener("load", surveillerMaj);
+      window.addEventListener("focus", surveillerMaj);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") surveillerMaj();
+      });
+      setInterval(() => {
+        if (document.visibilityState === "hidden") return;
+        surveillerMaj();
+      }, 20000);
     </script>
   </head>
   <body class="locked">
@@ -189,6 +250,7 @@
             <li>Même déjà connecté, une mise à jour rouvre ce message une fois.</li>
             <li>Un clic sur une carte ouvre de nouveau sa fiche.</li>
             <li>Un signalement s'envoie, avec la photo de l'écran, et tout le monde le voit.</li>
+            <li>Si l'app est restée ouverte, une mise à jour recharge la page.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -199,7 +261,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=50";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=51";
 
       const porte = document.getElementById("porte");
       const entrerForm = document.getElementById("porte-entrer");
@@ -221,7 +283,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=50");
+        import("./app.js?v=51");
       }
 
       function fermerPorte() {
