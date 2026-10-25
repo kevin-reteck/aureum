@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=43";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=44";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
@@ -3614,7 +3614,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=43", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=44", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -3731,29 +3731,44 @@ function montrerSignal(report, note) {
   if (ligne && note) ligne.textContent = note;
 }
 
+function poserCapture(report, shot) {
+  report.shot = shot || "";
+  const apercu = document.getElementById("signal-apercu");
+  const ligne = document.getElementById("signal-note");
+  if (apercu) {
+    const src = srcCapture(report.shot);
+    apercu.src = src;
+    apercu.hidden = !src;
+  }
+  if (ligne) {
+    ligne.textContent = shot
+      ? "La photo est prise. Décris ce qui cloche, puis garde ou partage."
+      : "La photo n'a pas pu être prise. Le texte suffit.";
+  }
+}
+
 async function ouvrirSignal() {
   const dialog = document.getElementById("signal");
-  const bouton = document.getElementById("signaler");
   if (!dialog || dialog.open) return;
-  if (bouton) bouton.disabled = true;
-  let shot = "";
-  try {
-    shot = await priseEcran();
-  } catch {
-    shot = "";
-  } finally {
-    if (bouton) bouton.disabled = false;
-  }
-  const report = brouillonSignal(shot);
-  montrerSignal(report, shot
-    ? "La capture est prise. Décrivez ce qui cloche, puis gardez le signalement ou partagez-le à Cursor."
-    : "La capture a échoué. Le texte et le contexte suffisent pour un debrief.");
+  const report = brouillonSignal("");
+  montrerSignal(report, "Décris ce qui cloche. La photo de l'écran arrive.");
   const texte = document.getElementById("signal-texte");
   if (texte) texte.value = "";
   paintSignaux();
-  lockSheet();
-  if (!dialog.open) dialog.showModal();
+  dialog.showModal();
   texte?.focus();
+  let shot = "";
+  try {
+    shot = await Promise.race([
+      priseEcran(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 5000)),
+    ]);
+  } catch {
+    shot = "";
+  }
+  if (!dialog.open || signalCourant !== report) return;
+  poserCapture(report, shot);
+  lockSheet();
 }
 
 function fermerSignal() {
@@ -4500,12 +4515,9 @@ function ouvrirJournal() {
 
 function boot() {
   ouvrirJournal();
-  const ligne = document.getElementById("compte-ligne");
   const email = emailSession();
-  if (ligne && email) {
-    ligne.hidden = false;
-    document.getElementById("compte-email").textContent = email;
-  }
+  const mail = document.getElementById("compte-email");
+  if (mail && email) mail.textContent = email;
   document.getElementById("quitter")?.addEventListener("click", () => {
     quitter();
     location.reload();
