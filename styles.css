@@ -1564,7 +1564,7 @@ dialog.is-leaving::backdrop {
   .sealed-tools select,
   .coll-label input,
   .coll-label textarea,
-  #porte-mot,
+  .porte-form input,
   label.field > select,
   label.field > input:not([type="checkbox"]):not([type="radio"]),
   label.field > textarea,
@@ -1821,23 +1821,25 @@ html[data-porte="ok"] .skip { display: block !important; }
 #porte {
   min-height: 100dvh;
   display: grid;
-  place-items: center;
+  align-items: safe center;
+  justify-items: center;
+  overflow: auto;
   padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
 }
 #porte[hidden] { display: none !important; }
-#porte-form {
+.porte-form {
   width: min(420px, 100%);
   display: grid;
   gap: 16px;
 }
-#porte-form::before {
+.porte-form::before {
   content: "";
   width: 32px;
   height: 1px;
   background: var(--gold);
 }
-#porte-form h1 { font-size: clamp(2.7rem, 9vw, 3.5rem); }
-#porte-mot {
+.porte-form h1 { font-size: clamp(2.7rem, 9vw, 3.5rem); }
+.porte-form input {
   width: 100%;
   margin-top: 6px;
   border: 1px solid var(--line);
@@ -1848,6 +1850,11 @@ html[data-porte="ok"] .skip { display: block !important; }
   padding: 0 14px;
   font: inherit;
   font-size: 16px;
+  text-transform: none;
+  letter-spacing: 0;
 }
-#porte-form .btn { justify-self: stretch; }
-#porte-note:not(:empty) { color: var(--down); }
+.porte-form .btn { justify-self: stretch; }
+.porte-form .hint { margin: 0; }
+.porte-form .signal-link { justify-self: start; text-align: left; }
+.porte-form .note:not(:empty) { color: var(--down); }
+#compte-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; }

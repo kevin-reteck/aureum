@@ -1,10 +1,9 @@
-const FAV_KEY = "aureum.favoris";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=41";
+
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
-const COLL_KEY = "aureum.collection";
 const COLL_MAX = 30;
 const NOTE_MAX = 140;
-const BINDER_KEY = "aureum.classeur";
 const POCKETS = 9;
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
@@ -679,7 +678,8 @@ async function pool(items, limit, worker) {
 
 function loadFavs() {
   try {
-    const raw = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
+    const brut = lireCabinet("favoris");
+    const raw = Array.isArray(brut) ? brut : [];
     if (!Array.isArray(raw)) return [];
     return raw.filter((item) => item && cleanId(item.id, "") && item.name).map((item) => ({
       ...item,
@@ -691,7 +691,7 @@ function loadFavs() {
 }
 
 function saveFavs() {
-  localStorage.setItem(FAV_KEY, JSON.stringify(state.favorites));
+  ecrireCabinet("favoris", state.favorites);
   updateFavCount();
 }
 
@@ -1717,7 +1717,7 @@ function emptyPage() {
 function loadBinder() {
   const fresh = () => ({ page: 0, pages: [emptyPage(), emptyPage()], cards: {} });
   try {
-    const raw = JSON.parse(localStorage.getItem(BINDER_KEY) || "null");
+    const raw = lireCabinet("classeur");
     const cards = raw && raw.cards && typeof raw.cards === "object" ? raw.cards : {};
     const source = Array.isArray(raw?.pages) ? raw.pages : [];
     const pages = source.map((page) => Array.from({ length: POCKETS }, (_, index) => {
@@ -1733,11 +1733,11 @@ function loadBinder() {
 }
 
 function saveBinder() {
-  localStorage.setItem(BINDER_KEY, JSON.stringify({
+  ecrireCabinet("classeur", {
     page: state.binder.page,
     pages: state.binder.pages,
     cards: state.binder.cards,
-  }));
+  });
 }
 
 function binderFind(id) {
@@ -2523,7 +2523,7 @@ function looseNote(value) {
 
 function loadCollection() {
   try {
-    const raw = JSON.parse(localStorage.getItem(COLL_KEY) || "{}");
+    const raw = lireCabinet("collection") || {};
     const items = Array.isArray(raw.items) ? raw.items : [];
     return {
       name: looseName(raw.name).trim(),
@@ -2546,7 +2546,7 @@ function loadCollection() {
 }
 
 function saveCollection() {
-  localStorage.setItem(COLL_KEY, JSON.stringify(state.collection));
+  ecrireCabinet("collection", state.collection);
 }
 
 function inCollection(id, lang = state.market) {
@@ -3564,7 +3564,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=40", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=41", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4399,6 +4399,16 @@ function applyMarket(lang) {
 }
 
 function boot() {
+  const ligne = document.getElementById("compte-ligne");
+  const email = emailSession();
+  if (ligne && email) {
+    ligne.hidden = false;
+    document.getElementById("compte-email").textContent = email;
+  }
+  document.getElementById("quitter")?.addEventListener("click", () => {
+    quitter();
+    location.reload();
+  });
   bind();
   bindSignal();
   registerServiceWorker();

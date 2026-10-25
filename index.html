@@ -16,11 +16,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=40">
+    <link rel="stylesheet" href="styles.css?v=41">
     <style>html,body{background:#0b0a08}</style>
     <script>
       try {
-        if (localStorage.getItem("aureum.porte") === "1") document.documentElement.dataset.porte = "ok";
+        const session = localStorage.getItem("aureum.session") || "";
+        if (session.includes("@")) document.documentElement.dataset.porte = "ok";
       } catch (error) { /* L'appareil refuse le stockage : la porte reste fermée. */ }
       window.aureumErreurs = [];
       function aureumNoterErreur(texte) {
@@ -37,15 +38,57 @@
   </head>
   <body class="locked">
     <div id="porte">
-      <form id="porte-form">
+      <form class="porte-form" id="porte-entrer">
         <p class="kicker">Cabinet privé</p>
         <h1>Aureum</h1>
-        <p class="lede">Ce cabinet est fermé. Le mot de passe l'ouvre sur cet appareil.</p>
+        <p class="lede" id="porte-lede">Entre avec ton adresse et ton mot de passe, ou crée un compte.</p>
+        <label class="field" for="porte-email">Adresse email
+          <input id="porte-email" type="email" autocomplete="username" enterkeyhint="next" required>
+        </label>
         <label class="field" for="porte-mot">Mot de passe
           <input id="porte-mot" type="password" autocomplete="current-password" enterkeyhint="go" required>
         </label>
         <button class="btn solid" type="submit">Entrer</button>
+        <button class="btn" id="porte-vers-creer" type="button">Créer un compte</button>
+        <button class="signal-link" id="porte-vers-reset" type="button">Réinitialiser un mot de passe</button>
         <p class="note" id="porte-note" role="alert"></p>
+      </form>
+      <form class="porte-form" id="porte-creer" hidden>
+        <p class="kicker">Nouveau compte</p>
+        <h1>Aureum</h1>
+        <p class="lede">Choisis une adresse et un mot de passe. Ils restent sur cet appareil, et dans le fichier comptes.json si on le republie.</p>
+        <label class="field" for="creer-email">Adresse email
+          <input id="creer-email" type="email" autocomplete="username" enterkeyhint="next" required>
+        </label>
+        <label class="field" for="creer-mot">Mot de passe
+          <input id="creer-mot" type="password" autocomplete="new-password" minlength="6" enterkeyhint="next" required>
+        </label>
+        <label class="field" for="creer-confirme">Encore le mot de passe
+          <input id="creer-confirme" type="password" autocomplete="new-password" minlength="6" enterkeyhint="go" required>
+        </label>
+        <button class="btn solid" type="submit">Créer le compte</button>
+        <button class="btn" id="porte-vers-entrer" type="button">J'ai déjà un compte</button>
+        <p class="hint">Aucun mail n'est envoyé. Si le mot de passe est perdu, le développeur le réinitialise.</p>
+        <p class="note" id="creer-note" role="alert"></p>
+      </form>
+      <form class="porte-form" id="porte-reset" hidden>
+        <p class="kicker">Développeur</p>
+        <h1>Réinitialiser</h1>
+        <p class="lede">Aucun mail n'est envoyé. Seul le développeur peut changer un mot de passe.</p>
+        <label class="field" for="reset-dev">Mot de passe développeur
+          <input id="reset-dev" type="password" autocomplete="current-password" enterkeyhint="next" required>
+        </label>
+        <label class="field" for="reset-email">Adresse du compte
+          <input id="reset-email" type="email" autocomplete="username" enterkeyhint="next" required>
+        </label>
+        <label class="field" for="reset-mot">Nouveau mot de passe
+          <input id="reset-mot" type="password" autocomplete="new-password" minlength="6" enterkeyhint="go" required>
+        </label>
+        <button class="btn solid" type="submit">Réinitialiser</button>
+        <button class="btn" id="porte-exporter" type="button">Télécharger comptes.json</button>
+        <button class="btn" id="reset-vers-entrer" type="button">Retour</button>
+        <p class="hint">Sur un autre téléphone : remplace le fichier comptes.json du dépôt, puis republie.</p>
+        <p class="note" id="reset-note" role="alert"></p>
       </form>
     </div>
     <a class="skip" href="#contenu">Aller au contenu</a>
@@ -88,6 +131,7 @@
       <p>Aureum est un cabinet de fan, indépendant de Nintendo, Creatures, Game Freak et The Pokémon Company. Les noms et les visuels restent la propriété de leurs ayants droit.</p>
       <p>Sur iPhone : bouton Partager, puis Sur l'écran d'accueil.</p>
       <p><button class="signal-link" id="signaler" type="button">Signaler un problème</button></p>
+      <div id="compte-ligne" hidden><span id="compte-email"></span> · <button class="signal-link" id="quitter" type="button">Quitter</button></div>
     </footer>
     <dialog id="signal" aria-label="Signaler un problème">
       <form class="signal" id="signal-form">
@@ -117,39 +161,122 @@
     </dialog>
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
-    <script>
-      const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
-      const PORTE_KEY = "aureum.porte";
+    <script type="module">
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=41";
+
       const porte = document.getElementById("porte");
-      const form = document.getElementById("porte-form");
-      const input = document.getElementById("porte-mot");
-      const note = document.getElementById("porte-note");
+      const entrerForm = document.getElementById("porte-entrer");
+      const creerForm = document.getElementById("porte-creer");
+      const resetForm = document.getElementById("porte-reset");
+      let cabinetOuvert = false;
+
+      function montrer(cible) {
+        [entrerForm, creerForm, resetForm].forEach((form) => {
+          form.hidden = form !== cible;
+          const note = form.querySelector(".note");
+          if (note) note.textContent = "";
+        });
+      }
 
       function ouvrirCabinet() {
+        if (cabinetOuvert) return;
+        cabinetOuvert = true;
+        document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=40");
+        import("./app.js?v=41");
       }
 
-      async function empreinte(texte) {
-        const octets = new TextEncoder().encode(texte);
-        const tampon = await crypto.subtle.digest("SHA-256", octets);
-        return [...new Uint8Array(tampon)].map((octet) => octet.toString(16).padStart(2, "0")).join("");
+      function fermerPorte() {
+        delete document.documentElement.dataset.porte;
+        document.body.classList.add("locked");
+        porte.hidden = false;
+        montrer(entrerForm);
       }
 
-      if (localStorage.getItem(PORTE_KEY) === "1") ouvrirCabinet();
+      await preparer();
+      if (aDesOrphelins()) {
+        document.getElementById("porte-lede").textContent = "Le premier compte reprend le classeur, les favoris et la collection déjà sur cet appareil.";
+      }
+      if (sessionActive()) ouvrirCabinet();
+      else fermerPorte();
 
-      form.addEventListener("submit", async (event) => {
+      document.getElementById("porte-vers-creer").addEventListener("click", () => {
+        document.getElementById("creer-email").value = document.getElementById("porte-email").value;
+        montrer(creerForm);
+        document.getElementById("creer-email").focus();
+      });
+      document.getElementById("porte-vers-entrer").addEventListener("click", () => montrer(entrerForm));
+      document.getElementById("porte-vers-reset").addEventListener("click", () => montrer(resetForm));
+      document.getElementById("reset-vers-entrer").addEventListener("click", () => montrer(entrerForm));
+
+      entrerForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const hash = await empreinte(input.value);
-        if (hash !== PORTE_HASH) {
-          note.textContent = "Mot de passe incorrect.";
-          input.value = "";
-          input.focus();
+        const note = document.getElementById("porte-note");
+        const bouton = entrerForm.querySelector("[type=submit]");
+        bouton.disabled = true;
+        const resultat = await entrer(document.getElementById("porte-email").value, document.getElementById("porte-mot").value);
+        bouton.disabled = false;
+        if (!resultat.ok) {
+          note.textContent = "Adresse ou mot de passe incorrect.";
+          document.getElementById("porte-mot").value = "";
+          document.getElementById("porte-mot").focus();
           return;
         }
-        localStorage.setItem(PORTE_KEY, "1");
         ouvrirCabinet();
+      });
+
+      creerForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = document.getElementById("creer-note");
+        const mot = document.getElementById("creer-mot").value;
+        if (mot !== document.getElementById("creer-confirme").value) {
+          note.textContent = "Les deux mots de passe ne sont pas les mêmes.";
+          return;
+        }
+        const bouton = creerForm.querySelector("[type=submit]");
+        bouton.disabled = true;
+        const resultat = await creer(document.getElementById("creer-email").value, mot);
+        bouton.disabled = false;
+        if (!resultat.ok && resultat.code === "email") note.textContent = "Cette adresse n'est pas valide.";
+        else if (!resultat.ok && resultat.code === "court") note.textContent = "Le mot de passe doit avoir au moins 6 caractères.";
+        else if (!resultat.ok && resultat.code === "existe") note.textContent = "Un compte existe déjà avec cette adresse.";
+        else if (!resultat.ok && resultat.code === "plein") note.textContent = "Trois comptes au plus pour le moment.";
+        else if (!resultat.ok) note.textContent = "Le compte n'a pas pu être créé.";
+        else ouvrirCabinet();
+      });
+
+      resetForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const note = document.getElementById("reset-note");
+        const bouton = resetForm.querySelector("[type=submit]");
+        bouton.disabled = true;
+        const resultat = await reinitialiser(
+          document.getElementById("reset-dev").value,
+          document.getElementById("reset-email").value,
+          document.getElementById("reset-mot").value,
+        );
+        bouton.disabled = false;
+        if (!resultat.ok && resultat.code === "dev") note.textContent = "Mot de passe développeur incorrect.";
+        else if (!resultat.ok && resultat.code === "absent") note.textContent = "Aucun compte avec cette adresse sur cet appareil.";
+        else if (!resultat.ok && resultat.code === "court") note.textContent = "Le mot de passe doit avoir au moins 6 caractères.";
+        else note.textContent = `Mot de passe réinitialisé pour ${resultat.email}. Télécharge comptes.json et remplace le fichier du dépôt pour les autres téléphones.`;
+      });
+
+      document.getElementById("porte-exporter").addEventListener("click", async () => {
+        const note = document.getElementById("reset-note");
+        if (!await motDevOk(document.getElementById("reset-dev").value)) {
+          note.textContent = "Mot de passe développeur incorrect.";
+          return;
+        }
+        const blob = new Blob([fichierComptes()], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const lien = document.createElement("a");
+        lien.href = url;
+        lien.download = "comptes.json";
+        lien.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        note.textContent = "Fichier téléchargé. Remplace comptes.json dans le dépôt, puis republie.";
       });
     </script>
     <noscript>Aureum a besoin de JavaScript pour interroger les cotes.</noscript>
