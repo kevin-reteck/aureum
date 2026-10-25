@@ -1,10 +1,9 @@
-const FAV_KEY = "aureum.favoris";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=42";
+
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "collection", "classeur"];
-const COLL_KEY = "aureum.collection";
 const COLL_MAX = 30;
 const NOTE_MAX = 140;
-const BINDER_KEY = "aureum.classeur";
 const POCKETS = 9;
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
@@ -582,8 +581,8 @@ function imgTag(card, size, eager) {
   const mark = esc(initials(card.name));
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
-  const priority = eager ? `fetchpriority="high"` : "";
-  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${priority} loading="eager" decoding="async">`;
+  const charge = eager ? `loading="eager" fetchpriority="high"` : `loading="lazy"`;
+  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${charge} decoding="async">`;
 }
 
 function logoTag(seriesId, setId) {
@@ -679,7 +678,8 @@ async function pool(items, limit, worker) {
 
 function loadFavs() {
   try {
-    const raw = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
+    const brut = lireCabinet("favoris");
+    const raw = Array.isArray(brut) ? brut : [];
     if (!Array.isArray(raw)) return [];
     return raw.filter((item) => item && cleanId(item.id, "") && item.name).map((item) => ({
       ...item,
@@ -690,8 +690,21 @@ function loadFavs() {
   }
 }
 
+function noterStockage(ok) {
+  if (ok !== false) return;
+  let note = document.getElementById("stockage-note");
+  if (!note) {
+    note = document.createElement("p");
+    note.id = "stockage-note";
+    note.className = "banner";
+    note.setAttribute("role", "alert");
+    document.querySelector("main")?.prepend(note);
+  }
+  note.textContent = "Le navigateur refuse d'enregistrer. Libère un peu de place, puis réessaie.";
+}
+
 function saveFavs() {
-  localStorage.setItem(FAV_KEY, JSON.stringify(state.favorites));
+  noterStockage(ecrireCabinet("favoris", state.favorites));
   updateFavCount();
 }
 
@@ -987,13 +1000,14 @@ function headHTML() {
     <p class="note" id="hydrate-note"></p>`;
 }
 
-function tileHTML(card) {
+function tileHTML(card, eager = false) {
   const full = resolveCard(card);
   const ready = Boolean(full.pricing) || cache.has(cacheKey(card.id, card.lang || state.market));
+  const lang = card.lang || state.market;
   return `
     <article class="tile" data-card="${esc(card.id)}">
-      <button class="tile-hit" type="button" data-open="${esc(card.id)}">
-        <span class="art" data-label="${esc(initials(full.name))}">${imgTag(full, "low", false)}</span>
+      <button class="tile-hit" type="button" data-open="${esc(card.id)}" data-lang="${esc(lang)}">
+        <span class="art" data-label="${esc(initials(full.name))}">${imgTag(full, "low", eager)}</span>
         <span class="tile-name">${esc(prettyName(full.name || "Carte"))}</span>
         <span class="tile-meta" data-slot="meta">${esc(metaLine(full))}</span>
         <span class="price-line${ready ? "" : " is-wait"}" data-slot="price">${ready ? priceHTML(full) : ""}</span>
@@ -1033,7 +1047,7 @@ function renderGrid() {
     watchMore();
     return;
   }
-  grille.innerHTML = `<div class="grid">${shown.map(tileHTML).join("")}</div>`;
+  grille.innerHTML = `<div class="grid">${shown.map((card, index) => tileHTML(card, index < 4)).join("")}</div>`;
   const more = activeCards().length > shown.length;
   if (foot) foot.innerHTML = more ? `<div class="more-sentinel" data-more="galerie"></div>` : "";
   watchMore();
@@ -1337,7 +1351,7 @@ function favorisHTML() {
       <div class="empty-state">
         <span class="mark lg" aria-hidden="true"></span>
         <h2>Le cabinet est vide.</h2>
-        <p class="lede">Ouvrez une fiche, puis ajoutez la carte aux favoris. Elle reste dans ce navigateur.</p>
+        <p class="lede">Ouvrez une fiche, puis ajoutez la carte aux favoris. Elle reste dans ton compte.</p>
         <button class="btn solid" type="button" data-tab="galerie">Retour à la galerie</button>
       </div>`;
   }
@@ -1348,7 +1362,7 @@ function favorisHTML() {
           <p class="kicker">Cabinet</p>
           <h2>Favoris</h2>
         </div>
-        <p class="lede">Les cartes épinglées restent dans ce navigateur. eBay s'ouvre trié du moins cher au plus cher. Vinted s'ouvre sur les annonces les plus proches de la carte.</p>
+        <p class="lede">Les cartes épinglées restent dans ton compte, sur cet appareil. eBay s'ouvre trié du moins cher au plus cher. Vinted s'ouvre sur les annonces les plus proches de la carte.</p>
       </header>
       <div class="fav-sort" role="group" aria-label="Trier les favoris">
         ${favSortButton("affaires", "Meilleures affaires")}
@@ -1717,7 +1731,7 @@ function emptyPage() {
 function loadBinder() {
   const fresh = () => ({ page: 0, pages: [emptyPage(), emptyPage()], cards: {} });
   try {
-    const raw = JSON.parse(localStorage.getItem(BINDER_KEY) || "null");
+    const raw = lireCabinet("classeur");
     const cards = raw && raw.cards && typeof raw.cards === "object" ? raw.cards : {};
     const source = Array.isArray(raw?.pages) ? raw.pages : [];
     const pages = source.map((page) => Array.from({ length: POCKETS }, (_, index) => {
@@ -1733,7 +1747,7 @@ function loadBinder() {
 }
 
 function saveBinder() {
-  localStorage.setItem(BINDER_KEY, JSON.stringify({
+  noterStockage(ecrireCabinet("classeur", {
     page: state.binder.page,
     pages: state.binder.pages,
     cards: state.binder.cards,
@@ -1805,6 +1819,10 @@ const FULL_FACE_RARITY = [
   "galerie",
   "chromatique",
   "gold",
+  "vmax",
+  "vstar",
+  "radieux",
+  "radiant",
 ];
 
 function foilKind(card) {
@@ -1822,13 +1840,14 @@ function foilKind(card) {
   if (holo && !normal && rarity.includes("ultra")) return "plein";
   if (holo && !normal) return "fenetre";
   if (reverse && !normal && !holo) return "cadre";
-  if (/holo|vmax|vstar|double rare|ultra/.test(rarity)) return "fenetre";
+  if (/holo|double rare|ultra|rare v\b/.test(rarity)) return "fenetre";
   return "papier";
 }
 
 function artSize(card) {
   const rarity = foldText(card?.rarity);
-  if (/double rare|holo rare v|vmax|vstar/.test(rarity)) return "large";
+  if (/vmax|vstar/.test(rarity)) return "classic";
+  if (/double rare|holo rare v|rare holo v|rare v\b/.test(rarity)) return "large";
   return "classic";
 }
 
@@ -1931,9 +1950,11 @@ function binderHTML() {
         <p class="lede" id="binder-status">${esc(binderLabel())}</p>
       </header>
       <div class="binder-book">
+        <div class="binder-cover" aria-hidden="true"></div>
         <div class="binder-sheet" id="binder-sheet">
           <div class="binder-grid" id="binder-grid">${page.map((id, index) => pocketHTML(id, index)).join("")}</div>
         </div>
+        <div class="binder-rings" aria-hidden="true"></div>
       </div>
       <div class="binder-nav">
         <button class="btn" type="button" data-binder="prev">Précédente</button>
@@ -1964,11 +1985,12 @@ function reliefHTML(card, slot) {
           ${holoSpan(card, false)}
           <span class="shine" aria-hidden="true"></span>
         </div>
+        <span class="relief-shadow" aria-hidden="true"></span>
       </div>
       <p class="relief-name">${esc(prettyName(card.name))}</p>
       <p class="hint">${foilHint(kind)}</p>
       <div class="fiche-actions">
-        <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}">Voir la fiche</button>
+        <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">Voir la fiche</button>
         <button class="btn" type="button" data-binder="remove" data-slot="${slot}">Retirer du classeur</button>
       </div>
     </div>`;
@@ -2075,13 +2097,17 @@ function stepFoilTilt() {
     foilTilt.x += (foilTilt.tx - foilTilt.x) * 0.16;
     foilTilt.y += (foilTilt.ty - foilTilt.y) * 0.16;
   }
-  const gain = (stage.dataset.foil || "papier") === "papier" ? 0.6 : 1;
-  const rx = 8 + (0.5 - foilTilt.y) * 44 * gain;
-  const ry = -14 + (foilTilt.x - 0.5) * 56 * gain;
+  const gain = (stage.dataset.foil || "papier") === "papier" ? 0.55 : 1;
+  /* 0,5 / 0,5 = téléphone tenu normalement : la carte reste face à l'écran. */
+  const rx = (0.5 - foilTilt.y) * 34 * gain;
+  const ry = (foilTilt.x - 0.5) * 42 * gain;
   stage.style.setProperty("--rx", `${rx.toFixed(2)}deg`);
   stage.style.setProperty("--ry", `${ry.toFixed(2)}deg`);
-  stage.style.setProperty("--mx", `${(50 + (foilTilt.x - 0.5) * 170).toFixed(1)}%`);
-  stage.style.setProperty("--my", `${(50 + (foilTilt.y - 0.5) * 170).toFixed(1)}%`);
+  stage.style.setProperty("--mx", `${(50 + (foilTilt.x - 0.5) * 140).toFixed(1)}%`);
+  stage.style.setProperty("--my", `${(42 + (foilTilt.y - 0.5) * 120).toFixed(1)}%`);
+  const host = stage.closest(".relief-stage");
+  host?.style.setProperty("--sx", ((foilTilt.x - 0.5) * 22 * gain).toFixed(1));
+  host?.style.setProperty("--sy", ((foilTilt.y - 0.5) * 14 * gain).toFixed(1));
   const left = Math.abs(foilTilt.tx - foilTilt.x) + Math.abs(foilTilt.ty - foilTilt.y);
   if (foilTilt.finger || left > 0.003) kickFoilTilt();
 }
@@ -2259,9 +2285,11 @@ function openRelief(id, slot) {
   if (!variantFlags(card)) refreshReliefFoil(card.id, card.lang || state.market);
 }
 
+let binderTurning = false;
+
 function turnBinder(dir) {
   const next = state.binder.page + dir;
-  if (next < 0 || next >= state.binder.pages.length) return;
+  if (binderTurning || next < 0 || next >= state.binder.pages.length) return;
   const sheet = document.getElementById("binder-sheet");
   const apply = () => {
     state.binder.page = next;
@@ -2273,19 +2301,21 @@ function turnBinder(dir) {
     apply();
     return;
   }
+  binderTurning = true;
   let swapped = false;
   const swap = () => {
     if (swapped) return;
     swapped = true;
+    binderTurning = false;
     sheet.removeEventListener("transitionend", onOut);
     apply();
     sheet.classList.remove("is-turning");
     sheet.style.transition = "none";
-    sheet.style.transform = `rotateY(${dir > 0 ? 14 : -14}deg)`;
+    sheet.style.transform = `rotateY(${dir > 0 ? 18 : -58}deg)`;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         sheet.style.transition = "transform .42s cubic-bezier(.16,.84,.3,1)";
-        sheet.style.transform = "rotateY(0deg)";
+        sheet.style.transform = "rotateY(-6deg)";
         const clear = (event) => {
           if (event.propertyName && event.propertyName !== "transform") return;
           sheet.removeEventListener("transitionend", clear);
@@ -2303,7 +2333,7 @@ function turnBinder(dir) {
   sheet.style.animation = "none";
   sheet.classList.add("is-turning");
   sheet.style.transition = "transform .32s cubic-bezier(.4,0,.2,1)";
-  sheet.style.transform = `rotateY(${dir > 0 ? -22 : 22}deg)`;
+  sheet.style.transform = `rotateY(${dir > 0 ? -58 : 18}deg)`;
   sheet.addEventListener("transitionend", onOut);
   window.setTimeout(swap, 380);
 }
@@ -2399,6 +2429,18 @@ function hideGhost() {
 async function placeBinderCard(id) {
   const safe = cleanId(id, "");
   if (!safe) return;
+  const found = binderFind(safe);
+  if (found) {
+    state.binder.page = found.page;
+    state.binderSlot = found.slot;
+    state.binderHits = [];
+    state.binderQuery = "";
+    saveBinder();
+    const champ = document.getElementById("binder-q");
+    if (champ) champ.value = "";
+    paintBinder();
+    return;
+  }
   let card = state.binder.cards[safe] || cache.get(cacheKey(safe));
   if (!card?.image || !variantFlags(card)) {
     try {
@@ -2511,7 +2553,7 @@ function looseNote(value) {
 
 function loadCollection() {
   try {
-    const raw = JSON.parse(localStorage.getItem(COLL_KEY) || "{}");
+    const raw = lireCabinet("collection") || {};
     const items = Array.isArray(raw.items) ? raw.items : [];
     return {
       name: looseName(raw.name).trim(),
@@ -2534,7 +2576,7 @@ function loadCollection() {
 }
 
 function saveCollection() {
-  localStorage.setItem(COLL_KEY, JSON.stringify(state.collection));
+  noterStockage(ecrireCabinet("collection", state.collection));
 }
 
 function inCollection(id, lang = state.market) {
@@ -2631,6 +2673,7 @@ function sanitizeRows(rows, withNote) {
 }
 
 async function decodeShare(token) {
+  try {
   if (typeof token !== "string" || token.length < 4 || token.length > 4000) return null;
   const kind = token[0];
   const bytes = b64urlToBytes(token.slice(1));
@@ -2640,12 +2683,16 @@ async function decodeShare(token) {
     json = await new Response(stream).text();
   } else if (kind === "j") json = new TextDecoder().decode(bytes);
   else return null;
+  if (json.length > 200000) return null;
   const data = JSON.parse(json);
   if (!data || data.v !== 1) return null;
   const items = sanitizeRows(data.items, true);
   const favs = sanitizeRows(data.favs, false);
   if (!items.length && !favs.length) return null;
   return { name: looseName(data.n).trim(), items, favs };
+  } catch {
+    return null;
+  }
 }
 
 function collCard(card, editable) {
@@ -2655,7 +2702,7 @@ function collCard(card, editable) {
     : `<span class="price-missing">Cote indisponible</span>`;
   const note = editable
     ? `<label class="coll-label">Commentaire
-        <textarea data-coll-note="${esc(card.id)}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
+        <textarea data-coll-note="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement dans le classeur.">${esc(card.note || "")}</textarea>
       </label>
       <button class="btn unfav" type="button" data-action="coll-remove" data-id="${esc(card.id)}" data-lang="${esc(card.lang || "fr")}">Retirer</button>`
     : (card.note ? `<p class="coll-note">${esc(card.note)}</p>` : "");
@@ -2768,7 +2815,7 @@ function collectionHTML() {
           <p class="kicker">Collection</p>
           <h2>Ma collection</h2>
         </div>
-        <p class="lede">Tes cartes, un commentaire, une cote en euros. Tout reste sur cet appareil. Le lien montre la page, il ne vend rien.</p>
+        <p class="lede">Tes cartes, un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
       </header>
       ${worthHTML()}
       <form class="coll-form" id="coll-form">
@@ -2831,6 +2878,20 @@ async function copyCollectionLink() {
   url.searchParams.set("voir", token);
   url.hash = "collection";
   const link = url.toString();
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Collection Aureum", url: link });
+      state.shareNote = "Lien prêt à envoyer.";
+      if (status) status.textContent = state.shareNote;
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        state.shareNote = "";
+        if (status) status.textContent = "";
+        return;
+      }
+    }
+  }
   try {
     await navigator.clipboard.writeText(link);
     state.shareNote = "Lien copié.";
@@ -3095,7 +3156,7 @@ async function hydrateShown(token) {
 async function selectSeries(seriesId) {
   const id = cleanId(seriesId, state.browseSeriesId);
   state.browseSeriesId = id;
-  if (setsCache.has(id)) {
+  if (setsCache.has(cacheKey(id))) {
     state.browseSets = await ensureSeriesSets(id);
     state.browseLoading = false;
     if (state.tab === "extensions") render();
@@ -3451,6 +3512,368 @@ function toggleFav(id, lang = state.market) {
   if (state.tab === "favoris") render();
 }
 
+const SIGNAL_KEY = "aureum.signalements";
+const SIGNAL_MAX = 12;
+
+function horlogeParis(date = new Date()) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function idFichier(id) {
+  return String(id || "sans-id").replace(/[^\w.-]+/g, "").slice(0, 48) || "sans-id";
+}
+
+function srcCapture(shot) {
+  return typeof shot === "string" && /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(shot) ? shot : "";
+}
+
+function idSignal() {
+  const parts = new Intl.DateTimeFormat("fr-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const lire = (type) => parts.find((part) => part.type === type)?.value || "00";
+  const suffixe = Math.random().toString(36).slice(2, 6);
+  return `${lire("year")}${lire("month")}${lire("day")}-${lire("hour")}${lire("minute")}-${suffixe}`;
+}
+
+function lireSignaux() {
+  try {
+    const brut = JSON.parse(localStorage.getItem(SIGNAL_KEY) || "[]");
+    return Array.isArray(brut) ? brut : [];
+  } catch {
+    return [];
+  }
+}
+
+function ecrireSignaux(liste) {
+  const garde = liste.slice(0, SIGNAL_MAX);
+  const tenter = (valeur) => {
+    localStorage.setItem(SIGNAL_KEY, JSON.stringify(valeur));
+  };
+  try {
+    tenter(garde);
+    return true;
+  } catch {
+    try {
+      tenter(garde.map((item, index) => (index === 0 ? item : { ...item, shot: "" })));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function contexteSignal() {
+  const fiche = document.getElementById("fiche");
+  const relief = document.getElementById("relief");
+  const bouts = [`Onglet ${state.tab || "galerie"}`];
+  if (state.view && state.view !== "set") bouts.push(state.view);
+  if (state.setId) bouts.push(`Extension ${state.setId}`);
+  if (fiche?.open && fiche.dataset.current) bouts.push(`Fiche ${fiche.dataset.current}`);
+  if (relief?.open && relief.dataset.card) bouts.push(`Relief ${relief.dataset.card}`);
+  bouts.push(`${window.innerWidth} × ${window.innerHeight}`);
+  return bouts.join(" · ");
+}
+
+function texteDebrief(report) {
+  const erreurs = report.errors?.length
+    ? report.errors.map((ligne) => `- ${ligne}`).join("\n")
+    : "- Aucune erreur JavaScript récente.";
+  return [
+    "Debrief Aureum — mode Ask.",
+    "Ne modifie pas le code. Décris le symptôme, ce que montre la capture, la cause probable et une piste.",
+    "",
+    `Identifiant : ${report.id}`,
+    `Quand : ${report.when} (Paris)`,
+    `Où : ${report.where}`,
+    `Adresse : ${report.url}`,
+    `Appareil : ${report.ua}`,
+    "",
+    "Ce que la personne voit :",
+    report.text,
+    "",
+    "Erreurs :",
+    erreurs,
+    "",
+    report.shot ? `Capture jointe : signalement-${idFichier(report.id)}.jpg` : "Pas de capture.",
+  ].join("\n");
+}
+
+function chargerCapture() {
+  if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = new URL("vendor/html2canvas.min.js?v=42", location.href).href;
+    script.onload = () => {
+      if (typeof window.html2canvas === "function") resolve(window.html2canvas);
+      else reject(new Error("capture"));
+    };
+    script.onerror = () => reject(new Error("capture"));
+    document.head.appendChild(script);
+  });
+}
+
+function moderniserCouleur(value) {
+  return String(value).replace(/color\(\s*srgb(?:-linear)?\s+([0-9.]+%?)\s+([0-9.]+%?)\s+([0-9.]+%?)(?:\s*\/\s*([0-9.]+%?))?\s*\)/gi, (_, r, g, b, a) => {
+    const canal = (part) => {
+      const texte = String(part);
+      return texte.endsWith("%") ? Math.round(parseFloat(texte) * 2.55) : Math.round(parseFloat(texte) * 255);
+    };
+    const rouge = canal(r);
+    const vert = canal(g);
+    const bleu = canal(b);
+    if (a == null) return `rgb(${rouge}, ${vert}, ${bleu})`;
+    const alpha = String(a).endsWith("%") ? parseFloat(a) / 100 : parseFloat(a);
+    return `rgba(${rouge}, ${vert}, ${bleu}, ${alpha})`;
+  });
+}
+
+function figerCouleurs(doc) {
+  const props = ["color", "backgroundColor", "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor", "outlineColor", "boxShadow", "backgroundImage", "textDecorationColor"];
+  const vue = doc.defaultView;
+  if (document.body.classList.contains("sheet-open")) {
+    doc.querySelectorAll("header, main, footer").forEach((element) => element.remove());
+  }
+  doc.querySelectorAll("*").forEach((element) => {
+    const style = vue.getComputedStyle(element);
+    props.forEach((prop) => {
+      const value = style[prop];
+      if (value && value.includes("color(")) element.style[prop] = moderniserCouleur(value);
+    });
+  });
+}
+
+async function priseEcran() {
+  const html2canvas = await chargerCapture();
+  const width = Math.max(1, Math.round(window.innerWidth));
+  const height = Math.max(1, Math.round(window.innerHeight));
+  const feuille = document.body.classList.contains("sheet-open");
+  const toile = await html2canvas(document.body, {
+    x: feuille ? 0 : window.scrollX,
+    y: feuille ? 0 : window.scrollY,
+    width,
+    height,
+    windowWidth: width,
+    windowHeight: height,
+    scrollX: feuille ? 0 : window.scrollX,
+    scrollY: feuille ? 0 : window.scrollY,
+    scale: Math.min(1.5, 520 / width),
+    useCORS: true,
+    backgroundColor: "#0b0a08",
+    logging: false,
+    ignoreElements: (element) => element.id === "signal" || element.id === "porte",
+    onclone: figerCouleurs,
+  });
+  return toile.toDataURL("image/jpeg", 0.62);
+}
+
+function brouillonSignal(shot) {
+  return {
+    id: idSignal(),
+    when: horlogeParis(),
+    where: contexteSignal(),
+    url: location.href,
+    ua: navigator.userAgent,
+    errors: [...(window.aureumErreurs || [])],
+    text: "",
+    shot: shot || "",
+  };
+}
+
+function paintSignaux() {
+  const liste = document.getElementById("signal-list");
+  if (!liste) return;
+  const signaux = lireSignaux();
+  if (!signaux.length) {
+    liste.innerHTML = `<p class="hint signal-vide">Aucun signalement sur cet appareil.</p>`;
+    return;
+  }
+  liste.innerHTML = signaux.map((report) => {
+    const src = srcCapture(report.shot);
+    return `
+    <div class="signal-item">
+      ${src ? `<img src="${src}" alt="">` : `<span class="signal-manque" aria-hidden="true"></span>`}
+      <button class="signal-voir" type="button" data-signal="voir" data-id="${esc(report.id)}">
+        <strong>${esc(report.when)}</strong>
+        <span>${esc(report.text)}</span>
+      </button>
+      <button class="text-btn" type="button" data-signal="retirer" data-id="${esc(report.id)}">Retirer</button>
+    </div>`;
+  }).join("");
+}
+
+let signalCourant = null;
+
+function montrerSignal(report, note) {
+  signalCourant = report;
+  const apercu = document.getElementById("signal-apercu");
+  const contexte = document.getElementById("signal-contexte");
+  const texte = document.getElementById("signal-texte");
+  const ligne = document.getElementById("signal-note");
+  if (apercu) {
+    const src = srcCapture(report.shot);
+    apercu.src = src;
+    apercu.hidden = !src;
+  }
+  if (contexte) contexte.textContent = report.where || "";
+  if (texte && document.activeElement !== texte) texte.value = report.text || "";
+  if (ligne && note) ligne.textContent = note;
+}
+
+async function ouvrirSignal() {
+  const dialog = document.getElementById("signal");
+  const bouton = document.getElementById("signaler");
+  if (!dialog || dialog.open) return;
+  if (bouton) bouton.disabled = true;
+  let shot = "";
+  try {
+    shot = await priseEcran();
+  } catch {
+    shot = "";
+  } finally {
+    if (bouton) bouton.disabled = false;
+  }
+  const report = brouillonSignal(shot);
+  montrerSignal(report, shot
+    ? "La capture est prise. Décrivez ce qui cloche, puis gardez le signalement ou partagez-le à Cursor."
+    : "La capture a échoué. Le texte et le contexte suffisent pour un debrief.");
+  const texte = document.getElementById("signal-texte");
+  if (texte) texte.value = "";
+  paintSignaux();
+  lockSheet();
+  if (!dialog.open) dialog.showModal();
+  texte?.focus();
+}
+
+function fermerSignal() {
+  const dialog = document.getElementById("signal");
+  if (dialog?.open) dialog.close();
+  unlockSheet();
+}
+
+function reportDepuisFormulaire() {
+  const texte = document.getElementById("signal-texte")?.value.trim() || "";
+  const base = signalCourant || brouillonSignal("");
+  return { ...base, text: texte };
+}
+
+function garderSignal(report) {
+  if (!report.text) return false;
+  const autres = lireSignaux().filter((item) => item.id !== report.id);
+  const ok = ecrireSignaux([report, ...autres]);
+  paintSignaux();
+  return ok;
+}
+
+async function fichierCapture(report) {
+  const src = srcCapture(report.shot);
+  if (!src) return null;
+  const reponse = await fetch(src);
+  const blob = await reponse.blob();
+  return new File([blob], `signalement-${idFichier(report.id)}.jpg`, { type: "image/jpeg" });
+}
+
+function telecharger(nom, contenu, type) {
+  const url = URL.createObjectURL(new Blob([contenu], { type }));
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = nom;
+  lien.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function partagerSignal(report) {
+  const texte = texteDebrief(report);
+  const fichier = await fichierCapture(report);
+  const fichiers = fichier ? [fichier] : [];
+  if (navigator.share && (!fichiers.length || !navigator.canShare || navigator.canShare({ files: fichiers }))) {
+    try {
+      await navigator.share({ title: "Signalement Aureum", text: texte, files: fichiers });
+      return "partage";
+    } catch (error) {
+      if (error?.name === "AbortError") return "annule";
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(texte);
+  } catch { /* Le téléchargement reste la copie de secours. */ }
+  telecharger(`signalement-${idFichier(report.id)}.md`, texte, "text/markdown");
+  if (fichier) telecharger(fichier.name, fichier, fichier.type);
+  return "fichier";
+}
+
+function bindSignal() {
+  document.getElementById("signaler")?.addEventListener("click", () => {
+    ouvrirSignal();
+  });
+  const dialog = document.getElementById("signal");
+  const form = document.getElementById("signal-form");
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const report = reportDepuisFormulaire();
+    if (!report.text) return;
+    const ok = garderSignal(report);
+    signalCourant = report;
+    const note = document.getElementById("signal-note");
+    if (note) {
+      note.textContent = ok
+        ? "Signalement gardé sur cet appareil. Partagez-le à Cursor pour un debrief."
+        : "Le navigateur refuse d'enregistrer davantage. Partagez celui-ci tout de suite.";
+    }
+  });
+  dialog?.addEventListener("click", async (event) => {
+    const bouton = event.target.closest("[data-signal]");
+    if (!bouton) return;
+    const action = bouton.dataset.signal;
+    if (action === "close") {
+      fermerSignal();
+      return;
+    }
+    if (action === "retirer") {
+      ecrireSignaux(lireSignaux().filter((item) => item.id !== bouton.dataset.id));
+      paintSignaux();
+      return;
+    }
+    if (action === "voir") {
+      const report = lireSignaux().find((item) => item.id === bouton.dataset.id);
+      if (!report) return;
+      montrerSignal(report, "Signalement rouvert. Vous pouvez le repartager à Cursor.");
+      const texte = document.getElementById("signal-texte");
+      if (texte) texte.value = report.text;
+      return;
+    }
+    if (action === "partager") {
+      const report = reportDepuisFormulaire();
+      if (!report.text) {
+        const note = document.getElementById("signal-note");
+        if (note) note.textContent = "Écrivez d'abord ce qui cloche.";
+        document.getElementById("signal-texte")?.focus();
+        return;
+      }
+      garderSignal(report);
+      signalCourant = report;
+      const suite = await partagerSignal(report);
+      const note = document.getElementById("signal-note");
+      if (!note) return;
+      if (suite === "partage") note.textContent = "Partage ouvert. Dans Cursor, mode Ask : collez le texte et la capture pour un debrief.";
+      else if (suite === "fichier") note.textContent = "Debrief téléchargé. Déposez le .md et la .jpg dans signalements/, ou joignez-les au chat Cursor en mode Ask.";
+    }
+  });
+  dialog?.addEventListener("close", () => {
+    unlockSheet();
+  });
+}
+
 function bind() {
   const form = document.getElementById("search-form");
   const input = document.getElementById("q");
@@ -3494,7 +3917,8 @@ function bind() {
     }
     const noteId = event.target.dataset?.collNote;
     if (noteId) {
-      const item = state.collection.items.find((row) => row.id === noteId);
+      const noteLang = event.target.dataset.lang || "fr";
+      const item = state.collection.items.find((row) => row.id === noteId && (row.lang || "fr") === noteLang);
       if (item) {
         item.note = looseNote(event.target.value);
         saveCollection();
@@ -4025,7 +4449,18 @@ function applyMarket(lang) {
 }
 
 function boot() {
+  const ligne = document.getElementById("compte-ligne");
+  const email = emailSession();
+  if (ligne && email) {
+    ligne.hidden = false;
+    document.getElementById("compte-email").textContent = email;
+  }
+  document.getElementById("quitter")?.addEventListener("click", () => {
+    quitter();
+    location.reload();
+  });
   bind();
+  bindSignal();
   registerServiceWorker();
   const fxReady = activeCurrency() !== "USD" || state.currency !== "EUR" ? loadFx() : Promise.resolve(null);
   const context = readContext();
