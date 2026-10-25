@@ -517,6 +517,18 @@ select {
   border-color: transparent;
 }
 
+.sealed-bar { display: grid; gap: 4px; margin-bottom: 8px; }
+.sealed-tools { display: flex; gap: 14px; align-items: center; }
+.sealed-tools input {
+  flex: 1 1 180px;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  padding: 8px 0;
+}
+.art.is-box { aspect-ratio: 1; }
+
 .sets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));

@@ -1,7 +1,7 @@
 const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
 const CTX_KEY = "aureum.contexte";
-const TABS = ["galerie", "extensions", "cotes", "favoris"];
+const TABS = ["galerie", "extensions", "etb", "cotes", "favoris"];
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
 const ICONIC_IDS = ["swsh7-215", "base1-4", "base1-2", "base1-15", "base1-10", "base1-6", "sv03.5-205", "base1-58"];
@@ -25,6 +25,7 @@ const TYPE_COLOR = {
 };
 
 const eurFmt = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+const usdFmt = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "USD" });
 const dayFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 
 const cache = new Map();
@@ -60,6 +61,14 @@ const state = {
   browseSets: [],
   browseLoading: false,
   quote: null,
+  sealed: null,
+  sealedAsOf: "",
+  sealedLoading: false,
+  sealedError: "",
+  sealedKind: "tous",
+  sealedSort: "recent",
+  sealedQuery: "",
+  sealedPage: 1,
 };
 
 function esc(value) {
@@ -776,11 +785,161 @@ function favorisHTML() {
     </section>`;
 }
 
+const SEALED_KINDS = [
+  ["tous", "Tous"],
+  ["etb", "ETB"],
+  ["coffret", "Coffrets"],
+  ["upc", "UPC"],
+];
+
+function sealedLabel(kind) {
+  if (kind === "etb") return "ETB";
+  if (kind === "upc") return "UPC";
+  return "Coffret";
+}
+
+function sealedRows() {
+  const q = state.sealedQuery.trim().toLowerCase();
+  let rows = Array.isArray(state.sealed) ? state.sealed : [];
+  if (state.sealedKind !== "tous") rows = rows.filter((item) => item.kind === state.sealedKind);
+  if (q) {
+    rows = rows.filter((item) => `${item.name} ${item.set}`.toLowerCase().includes(q));
+  }
+  const copy = rows.slice();
+  if (state.sealedSort === "nom") copy.sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  else if (state.sealedSort === "cote") copy.sort((a, b) => (b.usd ?? -1) - (a.usd ?? -1));
+  else copy.sort((a, b) => String(b.released || "").localeCompare(String(a.released || "")) || a.name.localeCompare(b.name, "fr"));
+  return copy;
+}
+
+function sealedStatus() {
+  const total = sealedRows().length;
+  if (!total) return "Aucun coffret ne correspond.";
+  const shown = Math.min(state.sealedPage * PAGE_SIZE, total);
+  const when = formatDay(state.sealedAsOf ? `${state.sealedAsOf}T12:00:00` : "");
+  const date = when ? `, relevées le ${when}` : "";
+  return `${shown} sur ${total}. Cotes TCGPlayer en dollars${date}.`;
+}
+
+function sealedTiles() {
+  const rows = sealedRows().slice(0, state.sealedPage * PAGE_SIZE);
+  if (!rows.length) return `<p class="note">Aucun coffret pour ce filtre.</p>`;
+  return rows.map((item) => {
+    const bits = [sealedLabel(item.kind)];
+    if (item.set) bits.push(item.set);
+    const day = formatDay(item.released ? `${item.released}T12:00:00` : "");
+    if (day) bits.push(day);
+    const price = typeof item.usd === "number"
+      ? `<span class="price">${esc(usdFmt.format(item.usd))}</span>`
+      : `<span class="price-missing">Cote indisponible</span>`;
+    return `
+      <article class="tile">
+        <div class="tile-hit">
+          <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
+            <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" loading="lazy" decoding="async">
+          </span>
+          <span class="tile-name">${esc(item.name)}</span>
+          <span class="tile-meta">${esc(bits.join(" · "))}</span>
+          <span class="price-line">${price}</span>
+        </div>
+      </article>`;
+  }).join("");
+}
+
+function sealedMore() {
+  const total = sealedRows().length;
+  if (state.sealedPage * PAGE_SIZE >= total) return "";
+  return `<button class="btn" type="button" data-sealed="more">Afficher les suivantes</button>`;
+}
+
+function paintSealed() {
+  const grid = document.getElementById("sealed-grid");
+  const status = document.getElementById("sealed-status");
+  const foot = document.getElementById("sealed-foot");
+  if (!grid || !status || !foot) {
+    render();
+    return;
+  }
+  grid.innerHTML = sealedTiles();
+  status.textContent = sealedStatus();
+  foot.innerHTML = sealedMore();
+}
+
+function etbHTML() {
+  if (!state.sealed) {
+    const note = state.sealedError
+      ? `${esc(state.sealedError)} <button class="btn" type="button" data-action="sealed-retry">Réessayer</button>`
+      : "Ouverture des coffrets…";
+    return `
+      <section class="panel">
+        <header class="section-head">
+          <div>
+            <p class="kicker">Scellés</p>
+            <h2>ETB, coffrets et UPC</h2>
+          </div>
+        </header>
+        <p class="note">${note}</p>
+      </section>`;
+  }
+  const counts = { tous: state.sealed.length, etb: 0, coffret: 0, upc: 0 };
+  state.sealed.forEach((item) => {
+    if (counts[item.kind] != null) counts[item.kind] += 1;
+  });
+  const filters = SEALED_KINDS.map(([id, label]) => `
+    <button type="button" data-sealed="kind" data-kind="${id}" aria-pressed="${state.sealedKind === id ? "true" : "false"}">${label} ${counts[id]}</button>`).join("");
+  return `
+    <section class="panel" id="sealed">
+      <header class="section-head">
+        <div>
+          <p class="kicker">Scellés</p>
+          <h2>ETB, coffrets et UPC</h2>
+        </div>
+        <p class="lede" id="sealed-status">${esc(sealedStatus())}</p>
+      </header>
+      <div class="sealed-bar">
+        <div class="series-row" role="group" aria-label="Type de coffret">${filters}</div>
+        <div class="sealed-tools">
+          <label class="sr-only" for="sealed-q">Filtrer les coffrets</label>
+          <input id="sealed-q" type="search" placeholder="Nom d'un coffret" value="${esc(state.sealedQuery)}" autocomplete="off" enterkeyhint="search">
+          <label class="sr-only" for="sealed-sort">Tri</label>
+          <select id="sealed-sort" aria-label="Tri">
+            <option value="recent"${state.sealedSort === "recent" ? " selected" : ""}>Plus récents</option>
+            <option value="cote"${state.sealedSort === "cote" ? " selected" : ""}>Cote</option>
+            <option value="nom"${state.sealedSort === "nom" ? " selected" : ""}>Nom</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid" id="sealed-grid">${sealedTiles()}</div>
+      <div class="foot-row" id="sealed-foot">${sealedMore()}</div>
+    </section>`;
+}
+
+async function loadSealed() {
+  if (state.sealed || state.sealedLoading) return;
+  state.sealedLoading = true;
+  state.sealedError = "";
+  if (state.tab === "etb") render();
+  try {
+    const response = await fetch("./sealed.json");
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    state.sealed = Array.isArray(data.products) ? data.products : [];
+    state.sealedAsOf = typeof data.asOf === "string" ? data.asOf : "";
+    state.sealedError = "";
+  } catch {
+    state.sealedError = "Les coffrets n'ont pas pu être chargés.";
+  } finally {
+    state.sealedLoading = false;
+    if (state.tab === "etb") render();
+  }
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
   if (state.tab === "galerie") app.innerHTML = galleryHTML();
   else if (state.tab === "extensions") app.innerHTML = extensionsHTML();
+  else if (state.tab === "etb") app.innerHTML = etbHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
@@ -793,6 +952,7 @@ function setTab(tab) {
   window.scrollTo(0, 0);
   if (tab === "extensions") selectSeries(state.browseSeriesId);
   if (tab === "favoris") refreshFavs();
+  if (tab === "etb") loadSealed();
 }
 
 async function loadIconics() {
@@ -1228,6 +1388,20 @@ function bind() {
     searchTimer = setTimeout(() => runSearch(input.value), 280);
   });
 
+  document.addEventListener("input", (event) => {
+    if (event.target.id !== "sealed-q") return;
+    state.sealedQuery = event.target.value;
+    state.sealedPage = 1;
+    paintSealed();
+  });
+
+  document.addEventListener("change", (event) => {
+    if (event.target.id !== "sealed-sort") return;
+    state.sealedSort = event.target.value;
+    state.sealedPage = 1;
+    paintSealed();
+  });
+
   clear.addEventListener("click", () => {
     input.value = "";
     clear.hidden = true;
@@ -1246,7 +1420,19 @@ function bind() {
     const setEl = event.target.closest("[data-set]");
     const seriesEl = event.target.closest("[data-series]");
     const tabEl = event.target.closest("[data-tab]");
+    const sealedEl = event.target.closest("[data-sealed]");
     const openEl = event.target.closest("[data-open]");
+    if (sealedEl) {
+      if (sealedEl.dataset.sealed === "kind") {
+        state.sealedKind = sealedEl.dataset.kind || "tous";
+        state.sealedPage = 1;
+        render();
+      }
+      if (sealedEl.dataset.sealed === "more") {
+        state.sealedPage += 1;
+        paintSealed();
+      }
+    }
 
     if (actionEl) {
       const action = actionEl.dataset.action;
@@ -1261,6 +1447,12 @@ function bind() {
         else loadSet(state.gallerySeriesId, state.setId);
       }
       if (action === "quote") quoteSet();
+      if (action === "sealed-retry") {
+        state.sealed = null;
+        state.sealedLoading = false;
+        state.sealedError = "";
+        loadSealed();
+      }
       if (action === "fav") toggleFav(actionEl.dataset.id);
       if (action === "unfav") {
         state.favorites = state.favorites.filter((item) => item.id !== actionEl.dataset.id);
@@ -1411,6 +1603,7 @@ function boot() {
   state.browseSeriesId = context.seriesId;
   rememberTab(initialTab());
   render();
+  if (state.tab === "etb") loadSealed();
   updateFavCount();
   fetchJSON("/series")
     .then((list) => {
