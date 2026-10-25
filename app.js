@@ -1,7 +1,11 @@
+import { OR_LINK, OR_PORTAL } from "./or.config.js";
+
 const API = "https://api.tcgdex.net/v2/fr";
 const FAV_KEY = "aureum.favoris";
+const OR_KEY = "aureum.or";
 const CTX_KEY = "aureum.contexte";
-const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris"];
+const FREE_FAVS = 3;
+const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "favoris", "or"];
 const PAGE_SIZE = 18;
 const HERO_IDS = ["swsh7-215", "base1-4", "base1-2"];
 const ICONIC_IDS = ["swsh7-215", "base1-4", "base1-2", "base1-15", "base1-10", "base1-6", "sv03.5-205", "base1-58"];
@@ -133,15 +137,55 @@ function deltaInfo(card) {
   return { pct, dir };
 }
 
-function priceHTML(card) {
+function subscribed() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OR_KEY) || "null");
+    return raw?.actif === true;
+  } catch {
+    return false;
+  }
+}
+
+function stripeHref(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return "";
+    const host = url.hostname;
+    if (host !== "buy.stripe.com" && host !== "checkout.stripe.com" && host !== "billing.stripe.com") return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+function isOr() {
+  return subscribed() || !stripeHref(OR_LINK);
+}
+
+function grantOr() {
+  localStorage.setItem(OR_KEY, JSON.stringify({ actif: true, depuis: new Date().toISOString() }));
+}
+
+function lockHTML() {
+  return `<span class="price-lock">Or</span>`;
+}
+
+function priceHTML(card, options = {}) {
   const prices = card?.pricing?.cardmarket;
   const amount = typeof prices?.trend === "number" ? prices.trend : typeof prices?.avg === "number" ? prices.avg : null;
   if (amount == null) return `<span class="price-missing">Cote indisponible</span>`;
+  if (!options.apercu && !isOr()) return lockHTML();
   const delta = deltaInfo(card);
   const move = delta
     ? `<span class="delta ${delta.dir}">${esc(formatPct(delta.pct))}<span class="delta-hint"> vs 30 j</span></span>`
     : "";
   return `<span class="price">${esc(eur(amount))}</span>${move}`;
+}
+
+function usdHTML(amount) {
+  if (typeof amount !== "number") return `<span class="price-missing">Cote indisponible</span>`;
+  if (!isOr()) return lockHTML();
+  return `<span class="price">${esc(usdFmt.format(amount))}</span>`;
 }
 
 function localNum(card) {
@@ -526,7 +570,7 @@ function fanInner() {
       </span>
       <span class="cap">
         <span class="fan-name">${esc(prettyName(card.name))}</span>
-        <span class="fan-price">${priceHTML(card)}</span>
+        <span class="fan-price">${priceHTML(card, { apercu: true })}</span>
       </span>
     </button>`).join("")}</div>`;
 }
@@ -634,6 +678,7 @@ function headHTML() {
       <p class="lede" id="grille-status">${esc(bits.join(" · "))}</p>
     </header>
     ${state.setId === "base1" ? `<p class="note">1re édition : le petit 1 est à gauche du descriptif, sous l'illustration.</p>` : ""}
+    ${!isOr() ? `<p class="note">Les cotes du catalogue sont dans Aureum Or. Les trois cartes de la une restent en aperçu.</p>` : ""}
     <p class="note" id="hydrate-note"></p>`;
 }
 
@@ -780,6 +825,15 @@ function quoteHTML() {
 }
 
 function cotesHTML() {
+  if (!isOr()) {
+    return `
+      <section class="panel or-gate">
+        <p class="kicker">Aureum Or</p>
+        <h2>Salle des cotes.</h2>
+        <p class="lede">Le classement par tendance Cardmarket est réservé à l'abonnement.</p>
+        <button class="btn solid" type="button" data-tab="or">Voir l'abonnement</button>
+      </section>`;
+  }
   const setName = prettyName(state.setDetail?.name || "l'extension");
   const running = Boolean(state.quote?.running);
   const label = running
@@ -827,7 +881,7 @@ function favorisHTML() {
           <p class="kicker">Cabinet</p>
           <h2>Favoris</h2>
         </div>
-        <p class="lede">Les cartes épinglées restent dans ce navigateur.</p>
+        <p class="lede">${isOr() ? "Les cartes épinglées restent dans ce navigateur." : "Trois favoris dans l'offre gratuite. Aureum Or enlève la limite."}</p>
       </header>
       <div class="grid fav-grid">${state.favorites.map((card) => `
         <article class="tile" data-card="${esc(card.id)}">
@@ -886,9 +940,7 @@ function sealedTiles() {
     if (item.set) bits.push(item.set);
     const day = formatDay(item.released ? `${item.released}T12:00:00` : "");
     if (day) bits.push(day);
-    const price = typeof item.usd === "number"
-      ? `<span class="price">${esc(usdFmt.format(item.usd))}</span>`
-      : `<span class="price-missing">Cote indisponible</span>`;
+    const price = usdHTML(item.usd);
     return `
       <article class="tile">
         <div class="tile-hit">
@@ -1043,9 +1095,7 @@ function universTiles() {
     if (item.set) bits.push(item.set);
     const day = releasedLabel(item.released);
     if (day) bits.push(day);
-    const price = typeof item.usd === "number"
-      ? `<span class="price">${esc(usdFmt.format(item.usd))}</span>`
-      : `<span class="price-missing">Cote indisponible</span>`;
+    const price = usdHTML(item.usd);
     const art = /^\d+$/.test(String(item.id))
       ? `<img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" loading="lazy" decoding="async">`
       : `<span class="monogram" data-label="${esc(initials(item.name))}">${esc(initials(item.name))}</span>`;
@@ -1150,6 +1200,42 @@ async function loadUnivers() {
   }
 }
 
+
+function orHTML() {
+  const href = stripeHref(OR_LINK);
+  const portal = stripeHref(OR_PORTAL);
+  if (subscribed()) {
+    return `
+      <section class="panel or-page">
+        <p class="kicker">Aureum Or</p>
+        <h2>Abonnement actif.</h2>
+        <p class="lede">Les cotes, la salle, les scellés et les favoris illimités sont ouverts sur cet appareil.</p>
+        ${portal ? `<a class="btn" href="${esc(portal)}">Gérer l'abonnement</a>` : `<p class="hint">Pour arrêter, ouvrez le lien dans le reçu Stripe.</p>`}
+      </section>`;
+  }
+  const pay = href
+    ? `<a class="btn solid" href="${esc(href)}">S'abonner avec Stripe</a>`
+    : `<p class="note">Paiement Stripe en préparation.</p>`;
+  return `
+    <section class="panel or-page">
+      <p class="kicker">Abonnement</p>
+      <h2>Aureum Or</h2>
+      <p class="or-price">4,90 € <small>/ mois</small></p>
+      <p class="lede">Le catalogue reste gratuit. Or ouvre les cotes et le cabinet sans limite.</p>
+      <ul class="or-list">
+        <li>Toutes les cotes Cardmarket en euros, et la variation sur 30 jours</li>
+        <li>La salle des cotes</li>
+        <li>Les cotes des ETB, des coffrets et des UPC</li>
+        <li>Les cotes des boosters</li>
+        <li>Favoris illimités</li>
+        <li>Le scan en grand dans la fiche</li>
+      </ul>
+      <p class="hint">Gratuit : le catalogue, les images, les fiches, l'univers, trois favoris, et les trois cartes de la une avec leur cote.</p>
+      ${pay}
+      <p class="hint">Paiement traité par Stripe. Aureum ne reçoit pas le numéro de carte. L'accès s'ouvre sur l'appareil qui revient du paiement.</p>
+    </section>`;
+}
+
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
@@ -1158,6 +1244,7 @@ function render() {
   else if (state.tab === "etb") app.innerHTML = etbHTML();
   else if (state.tab === "univers") app.innerHTML = universHTML();
   else if (state.tab === "cotes") app.innerHTML = cotesHTML();
+  else if (state.tab === "or") app.innerHTML = orHTML();
   else app.innerHTML = favorisHTML();
   if (state.tab === "galerie") renderGrid();
   updateFavCount();
@@ -1407,6 +1494,13 @@ function duoHTML(card) {
   if (refTrend == null && bestTrend == null) {
     return `<p class="price-missing">Cote indisponible pour ce tirage.</p>`;
   }
+  if (!isOr()) {
+    return `
+      <article>
+        <span>Tendance</span>
+        <strong class="price-lock">Or</strong>
+      </article>`;
+  }
   const showDuo = refTrend != null && bestTrend != null && bestTrend > refTrend * 1.15;
   if (!showDuo) {
     const amount = refTrend ?? bestTrend;
@@ -1430,6 +1524,7 @@ function duoHTML(card) {
 }
 
 function statsHTML(card) {
+  if (!isOr()) return "";
   const prices = card.pricing?.cardmarket;
   if (!prices) return "";
   const rows = [
@@ -1457,8 +1552,8 @@ function variantsHTML(card) {
         ${rows.map(({ variant, trend, low }) => `
           <tr>
             <td>${esc(labelVariant(variant) || "Tirage")}</td>
-            <td>${typeof low === "number" ? esc(eur(low)) : "—"}</td>
-            <td>${typeof trend === "number" ? esc(eur(trend)) : "Cote indisponible"}</td>
+            <td>${typeof low === "number" ? (isOr() ? esc(eur(low)) : `<span class="price-lock">Or</span>`) : "—"}</td>
+            <td>${typeof trend === "number" ? (isOr() ? esc(eur(trend)) : `<span class="price-lock">Or</span>`) : "Cote indisponible"}</td>
           </tr>`).join("")}
       </tbody>
     </table>`;
@@ -1519,7 +1614,7 @@ function ficheHTML(card) {
       <button class="close" type="button" data-action="close">Fermer</button>
       <div class="fiche-art">
         <div class="stage" data-tilt data-label="${esc(initials(card.name))}">
-          ${imgTag(card, "high", true)}
+          ${imgTag(card, isOr() ? "high" : "low", true)}
           <span class="shine" aria-hidden="true"></span>
         </div>
       </div>
@@ -1535,8 +1630,9 @@ function ficheHTML(card) {
         ${card.evolveFrom ? `<p class="hint">Évolue de ${esc(card.evolveFrom)}</p>` : ""}
         ${card.description ? `<blockquote class="flavor">${esc(card.description)}</blockquote>` : ""}
         <div class="duo">${duoHTML(card)}</div>
-        ${trendOf(card) >= 0 || bestVariant(card) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
-        ${when ? `<p class="hint">Mise à jour le ${esc(when)}.</p>` : ""}
+        ${isOr() && (trendOf(card) >= 0 || bestVariant(card)) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
+        ${!isOr() && (trendOf(card) >= 0 || bestVariant(card)) ? `<button class="btn solid" type="button" data-tab="or">Voir la cote avec Aureum Or</button>` : ""}
+        ${isOr() && when ? `<p class="hint">Mise à jour le ${esc(when)}.</p>` : ""}
         ${statsHTML(card)}
         ${variantsHTML(card)}
         ${combatHTML(card)}
@@ -1546,7 +1642,7 @@ function ficheHTML(card) {
         <div class="fiche-actions">
           <button class="btn solid" type="button" data-action="fav" data-id="${esc(card.id)}" aria-pressed="${favOn ? "true" : "false"}">${favOn ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
         </div>
-        <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
+        <p class="hint">${isOr() ? "Cote indicative Cardmarket, pas une offre d'achat." : "Le grand scan et les montants sont dans Aureum Or."}</p>
       </div>
     </article>`;
 }
@@ -1577,7 +1673,12 @@ function toggleFav(id) {
   const card = cache.get(id) || state.favorites.find((item) => item.id === id) || activeCards().find((item) => item.id === id);
   if (!card) return;
   if (isFav(id)) state.favorites = state.favorites.filter((item) => item.id !== id);
-  else state.favorites.unshift(snapshot(card));
+  else if (!isOr() && state.favorites.length >= FREE_FAVS) {
+    const dialog = document.getElementById("fiche");
+    if (dialog?.open) dialog.close();
+    setTab("or");
+    return;
+  } else state.favorites.unshift(snapshot(card));
   saveFavs();
   const button = document.querySelector("#fiche [data-action='fav']");
   if (button && button.dataset.id === id) {
@@ -1731,6 +1832,8 @@ function bind() {
     }
 
     if (tabEl) {
+      const dialogBox = document.getElementById("fiche");
+      if (dialogBox?.open) dialogBox.close();
       if (tabEl.dataset.reset && state.view === "search") {
         clearTimeout(searchTimer);
         loadSet(state.gallerySeriesId, state.setId);
@@ -1832,9 +1935,19 @@ function registerServiceWorker() {
   else window.addEventListener("load", register);
 }
 
+function consumeReturn() {
+  const params = new URLSearchParams(location.search);
+  const abo = params.get("abo");
+  if (abo === "succes") grantOr();
+  if (!abo) return;
+  const hash = location.hash && location.hash !== "#" ? location.hash : "#or";
+  history.replaceState(null, "", `${location.pathname}${hash}`);
+}
+
 function boot() {
   bind();
   registerServiceWorker();
+  consumeReturn();
   const context = readContext();
   state.gallerySeriesId = context.seriesId;
   state.setId = context.setId;
