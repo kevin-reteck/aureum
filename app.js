@@ -41,6 +41,7 @@ const setsCache = new Map();
 let epoch = 0;
 let favEpoch = 0;
 let visitEpoch = 0;
+let collEpoch = 0;
 let quoteToken = 0;
 let searchTimer = 0;
 const motionOK = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1639,6 +1640,7 @@ function loadCollection() {
         setName: looseNote(item.setName).trim(),
         localId: looseNote(item.localId).trim().slice(0, 16),
         note: looseNote(item.note).trim(),
+        trend: typeof item.trend === "number" && item.trend >= 0 ? item.trend : null,
       })),
     };
   } catch {
@@ -1662,6 +1664,7 @@ function collectionFromCard(card, note = "") {
     setName: card.set?.name || card.setName || "",
     localId: card.localId || "",
     note: looseNote(note).trim(),
+    trend: typeof card.pricing?.cardmarket?.trend === "number" ? card.pricing.cardmarket.trend : (typeof card.trend === "number" ? card.trend : null),
   };
 }
 
@@ -1809,6 +1812,56 @@ function visitHTML() {
     </section>`;
 }
 
+function collectionWorth() {
+  let sum = 0;
+  let known = 0;
+  state.collection.items.forEach((item) => {
+    if (typeof item.trend !== "number") return;
+    sum += item.trend;
+    known += 1;
+  });
+  return { sum, known, total: state.collection.items.length };
+}
+
+function worthHTML() {
+  const { sum, known, total } = collectionWorth();
+  if (!total) return "";
+  if (!known) {
+    return `<p class="coll-worth" id="coll-worth"><span class="price-missing">Valeur indisponible</span></p>`;
+  }
+  const missing = total - known;
+  const hole = missing ? `<span class="deal-note">${missing} ${missing > 1 ? "cartes" : "carte"} sans cote.</span>` : "";
+  return `
+    <p class="coll-worth" id="coll-worth">
+      <span class="kicker">Valeur indicative</span>
+      <strong class="price">${esc(eur(sum))}</strong>
+      <span class="deal-note">Somme des cotes Cardmarket. Chaque carte compte une fois. Pas un prix de vente.</span>
+      ${hole}
+    </p>`;
+}
+
+async function refreshCollection() {
+  if (state.visit || state.tab !== "collection" || !state.collection.items.length) return;
+  const token = ++collEpoch;
+  await pool(state.collection.items, 4, async (item) => {
+    try {
+      const full = await getCard(item.id);
+      if (token !== collEpoch || state.visit || state.tab !== "collection") return;
+      const trend = full.pricing?.cardmarket?.trend;
+      item.trend = typeof trend === "number" ? trend : null;
+      if (typeof full.image === "string") item.image = full.image;
+      patchCard(full);
+    } catch {
+      /* La dernière cote connue reste affichée. */
+    }
+  });
+  if (token !== collEpoch || state.visit || state.tab !== "collection") return;
+  saveCollection();
+  const slot = document.getElementById("coll-worth");
+  const html = worthHTML();
+  if (slot) slot.outerHTML = html;
+}
+
 function collectionHTML() {
   if (state.visit) return visitHTML();
   const mine = state.collection;
@@ -1824,6 +1877,7 @@ function collectionHTML() {
         </div>
         <p class="lede">Un commentaire sous chaque carte, sur cet appareil. Le lien la montre à qui tu veux, avec ton nom ou sans. Rien ne se vend ici.</p>
       </header>
+      ${worthHTML()}
       <form class="coll-form" id="coll-form">
         <label class="coll-label" for="coll-name">Ton nom
           <input id="coll-name" type="text" maxlength="24" value="${esc(mine.name)}" placeholder="Un prénom suffit" autocomplete="nickname">
@@ -1933,7 +1987,10 @@ function setTab(tab) {
   window.scrollTo(0, 0);
   if (tab === "extensions") selectSeries(state.browseSeriesId);
   if (tab === "favoris") refreshFavs();
-  if (tab === "collection") hydrateVisit();
+  if (tab === "collection") {
+    hydrateVisit();
+    refreshCollection();
+  }
   if (tab === "etb") loadSealed();
   if (tab === "univers") loadUnivers();
 }
@@ -2808,7 +2865,10 @@ function boot() {
     if (state.tab === "univers") loadUnivers();
     updateFavCount();
     if (state.tab === "favoris") refreshFavs();
-    if (state.tab === "collection") hydrateVisit();
+    if (state.tab === "collection") {
+      hydrateVisit();
+      refreshCollection();
+    }
     fetchJSON("/series")
       .then((list) => {
         state.series = Array.isArray(list) ? list : [];

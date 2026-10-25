@@ -663,7 +663,8 @@ img.is-trying { opacity: 0; }
 
 .fav-grid .tile { display: flex; flex-direction: column; gap: 8px; }
 .unfav { align-self: flex-start; }
-.coll-form { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; max-width: 440px; margin: 0 0 8px; }
+.coll-worth { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0 0 18px; }
+.coll-worth .price { font-size: 1.8rem; }
 .coll-form .btn { margin-top: 0; }
 .coll-label { display: flex; flex-direction: column; gap: 6px; width: 100%; color: var(--muted); font-size: 0.84rem; }
 .coll-label input, .coll-label textarea {
