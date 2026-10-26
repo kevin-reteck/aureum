@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=63";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=64";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -4640,7 +4640,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=63", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=64", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4700,36 +4700,6 @@ function figerCouleurs(doc) {
   });
 }
 
-function clarteToile(toile) {
-  const petit = document.createElement("canvas");
-  petit.width = 24;
-  petit.height = 40;
-  const crayon = petit.getContext("2d", { willReadFrequently: true });
-  if (!crayon) return 1;
-  crayon.drawImage(toile, 0, 0, 24, 40);
-  const data = crayon.getImageData(0, 0, 24, 40).data;
-  let clairs = 0;
-  const total = data.length / 4;
-  for (let i = 0; i < data.length; i += 4) {
-    if ((data[i] + data[i + 1] + data[i + 2]) / 3 > 46) clairs += 1;
-  }
-  return total ? clairs / total : 0;
-}
-
-function horsCadre(element) {
-  const classe = element.classList;
-  if (!classe?.contains("tile") && !classe?.contains("set-tile") && !classe?.contains("coll-card") && !classe?.contains("pocket")) return false;
-  const box = element.getBoundingClientRect();
-  return box.bottom < -80 || box.top > window.innerHeight + 80 || box.right < -80 || box.left > window.innerWidth + 80;
-}
-
-function scanPriveVisible(racine) {
-  return [...racine.querySelectorAll("img[src*='tcgplayer']")].some((img) => {
-    const box = img.getBoundingClientRect();
-    return box.bottom > 0 && box.top < window.innerHeight && box.right > 0 && box.left < window.innerWidth;
-  });
-}
-
 function attendreImages(hote, delai = 1600) {
   const images = [...hote.querySelectorAll("img")];
   return Promise.race([
@@ -4738,129 +4708,114 @@ function attendreImages(hote, delai = 1600) {
   ]);
 }
 
-async function toileHote(html2canvas, width, height, options, html) {
-  const hote = document.createElement("div");
-  hote.id = "capture-hote";
-  hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:1;`;
-  hote.innerHTML = html;
-  document.body.appendChild(hote);
-  try {
-    hote.querySelectorAll("img").forEach((img) => {
-      if (img.getBoundingClientRect().top > height + 40) {
-        img.remove();
-        return;
-      }
-      const src = img.getAttribute("src") || "";
-      const urls = src.includes("tcgplayer")
-        ? (img.dataset.fallbacks || "").split("|").filter((url) => url.includes("assets.tcgdex.net"))
-        : [];
-      const secours = urls[0] || "";
-      img.removeAttribute("src");
-      img.crossOrigin = "anonymous";
-      img.setAttribute("src", secours || src);
-    });
-    await attendreImages(hote);
-    hote.querySelectorAll("img").forEach((img) => {
-      if (!img.naturalWidth) return;
-      const copie = document.createElement("canvas");
-      copie.width = img.naturalWidth;
-      copie.height = img.naturalHeight;
-      try {
-        copie.getContext("2d").drawImage(img, 0, 0);
-        img.src = copie.toDataURL("image/jpeg", 0.82);
-      } catch {
-        /* Le scan privé reste vide : la photo publique ne peut pas le copier. */
-      }
-    });
-    return await html2canvas(hote, {
-      ...options,
-      x: 0,
-      y: 0,
-      scrollX: 0,
-      scrollY: 0,
-      ignoreElements: (element) => element.id === "signal" || element.id === "porte",
-      onclone: (doc) => {
-        figerCouleurs(doc);
-        const copie = doc.getElementById("capture-hote");
-        if (copie) copie.style.opacity = "1";
-      },
-    });
-  } finally {
-    hote.remove();
-  }
+function poserComme(copie, source) {
+  const box = source.getBoundingClientRect();
+  copie.style.position = "absolute";
+  copie.style.inset = "auto";
+  copie.style.margin = "0";
+  copie.style.transform = "none";
+  copie.style.top = `${box.top}px`;
+  copie.style.left = `${box.left}px`;
+  copie.style.width = `${box.width}px`;
 }
 
-async function toileDuCabinet(html2canvas, width, height, options) {
-  const marques = [];
-  document.querySelectorAll(".tile, .set-tile, .coll-card, .pocket").forEach((element) => {
-    if (!horsCadre(element)) return;
-    element.dataset.hors = "1";
-    marques.push(element);
-  });
-  const entete = document.querySelector("header")?.outerHTML || "";
-  let html = "";
-  try {
-    html = `${entete}${document.querySelector("main")?.innerHTML || ""}`;
-  } finally {
-    marques.forEach((element) => delete element.dataset.hors);
-  }
-  const hote = document.createElement("template");
-  hote.innerHTML = html;
-  hote.content.querySelectorAll("[data-hors='1']").forEach((element) => element.remove());
-  const propre = document.createElement("div");
-  propre.append(...hote.content.childNodes);
-  return toileHote(html2canvas, width, height, options, propre.innerHTML);
-}
-
-async function priseEcran() {
-  const html2canvas = await chargerCapture();
+function figerInstant() {
   const width = Math.max(1, Math.round(window.innerWidth));
   const height = Math.max(1, Math.round(window.innerHeight));
+  const hote = document.createElement("div");
+  hote.id = "capture-hote";
+  hote.setAttribute("aria-hidden", "true");
+  hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:0;`;
   const feuille = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open) || null;
-  const signal = document.getElementById("signal");
-  const options = {
-    x: feuille ? 0 : window.scrollX,
-    y: feuille ? 0 : window.scrollY,
+  if (feuille) {
+    const copie = feuille.cloneNode(true);
+    copie.removeAttribute("open");
+    copie.style.display = "block";
+    copie.style.opacity = "1";
+    copie.style.maxHeight = "none";
+    copie.style.overflow = "hidden";
+    poserComme(copie, feuille);
+    copie.style.height = `${feuille.getBoundingClientRect().height}px`;
+    hote.appendChild(copie);
+    const sourceCorps = feuille.querySelector(".fiche-body, .relief-copy");
+    const copieCorps = copie.querySelector(".fiche-body, .relief-copy");
+    if (sourceCorps && copieCorps && sourceCorps.scrollTop) {
+      copieCorps.style.transform = `translateY(-${sourceCorps.scrollTop}px)`;
+    }
+  } else {
+    const entete = document.querySelector("header");
+    const corps = document.querySelector("main");
+    if (entete) {
+      const copie = entete.cloneNode(true);
+      copie.style.zIndex = "2";
+      poserComme(copie, entete);
+      hote.appendChild(copie);
+    }
+    if (corps) {
+      const copie = corps.cloneNode(true);
+      poserComme(copie, corps);
+      hote.appendChild(copie);
+    }
+  }
+  hote.querySelectorAll("#signal, #porte, #journal").forEach((element) => element.remove());
+  document.body.appendChild(hote);
+  return { hote, width, height };
+}
+
+async function priseEcran(instant) {
+  const html2canvas = await chargerCapture();
+  const { hote, width, height } = instant;
+  hote.querySelectorAll("img").forEach((img) => {
+    const src = img.getAttribute("src") || "";
+    const urls = src.includes("tcgplayer")
+      ? (img.dataset.fallbacks || "").split("|").filter((url) => url.includes("assets.tcgdex.net"))
+      : [];
+    const secours = urls[0] || "";
+    if (!secours) return;
+    img.removeAttribute("src");
+    img.crossOrigin = "anonymous";
+    img.setAttribute("src", secours);
+  });
+  await attendreImages(hote);
+  hote.querySelectorAll("img").forEach((img) => {
+    if (!img.naturalWidth) return;
+    const copie = document.createElement("canvas");
+    copie.width = img.naturalWidth;
+    copie.height = img.naturalHeight;
+    try {
+      copie.getContext("2d").drawImage(img, 0, 0);
+      img.src = copie.toDataURL("image/jpeg", 0.82);
+    } catch {
+      /* Le scan privé reste vide : la photo publique ne peut pas le copier. */
+    }
+  });
+  const toile = await html2canvas(hote, {
+    x: 0,
+    y: 0,
     width,
     height,
     windowWidth: width,
     windowHeight: height,
-    scrollX: feuille ? 0 : window.scrollX,
-    scrollY: feuille ? 0 : window.scrollY,
+    scrollX: 0,
+    scrollY: 0,
     scale: 1,
     useCORS: true,
     backgroundColor: "#0b0a08",
     logging: false,
     imageTimeout: 1800,
-    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote" || (!feuille && horsCadre(element)),
-    onclone: figerCouleurs,
-  };
-  let rapide = null;
-  if (signal?.open && !feuille) {
-    try {
-      rapide = await toileDuCabinet(html2canvas, width, height, options);
-      if (rapide && clarteToile(rapide) >= 0.08) return rapide.toDataURL("image/jpeg", 0.6);
-    } catch {
-      rapide = null;
-    }
-  }
-  let toile;
-  try {
-    toile = await html2canvas(feuille || document.body, options);
-  } catch {
-    toile = null;
-  }
-  const scansPrives = scanPriveVisible(feuille || document);
-  if (!toile || clarteToile(toile) < 0.08 || scansPrives) {
-    try {
-      const autre = feuille
-        ? await toileHote(html2canvas, width, height, options, feuille.innerHTML || "")
-        : (rapide || await toileDuCabinet(html2canvas, width, height, options));
-      if (autre && (!toile || feuille || clarteToile(autre) >= clarteToile(toile))) toile = autre;
-    } catch {
-      /* La première photo reste si le second essai échoue. */
-    }
-  }
+    ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "journal" || Boolean(element.closest?.("#signal, #porte, #journal")),
+    onclone: (doc) => {
+      const copie = doc.getElementById("capture-hote");
+      doc.querySelectorAll("#signal, #porte, #journal").forEach((element) => element.remove());
+      if (copie) {
+        [...doc.body.children].forEach((element) => {
+          if (element !== copie) element.remove();
+        });
+        copie.style.opacity = "1";
+      }
+      figerCouleurs(doc);
+    },
+  });
   if (!toile) throw new Error("capture");
   return toile.toDataURL("image/jpeg", 0.6);
 }
@@ -5072,6 +5027,7 @@ async function ouvrirSignal() {
   if (!dialog || dialog.open || signalOuverture) return;
   const generation = ++signalGeneration;
   signalOuverture = true;
+  const instant = figerInstant();
   const report = brouillonSignal("");
   montrerSignal(report, "La photo se prépare.");
   const texte = document.getElementById("signal-texte");
@@ -5081,23 +5037,17 @@ async function ouvrirSignal() {
   lockSheet();
   texte?.focus();
   chargerSignaux();
-  await new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
-  });
-  if (generation !== signalGeneration || !dialog.open) {
-    signalOuverture = false;
-    return;
-  }
   let shot = "";
   try {
     shot = await Promise.race([
-      priseEcran(),
+      priseEcran(instant),
       new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 12000)),
     ]);
   } catch {
     shot = "";
   } finally {
     signalOuverture = false;
+    instant.hote.remove();
   }
   if (generation !== signalGeneration || !dialog.open) return;
   report.shot = shot || "";

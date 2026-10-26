@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=63">
+    <link rel="stylesheet" href="styles.css?v=64">
     <style>html,body{background:#0b0a08}</style>
     <script>
       window.aureumErreurs = [];
@@ -31,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "63";
+      const VERSION_PAGE = "64";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -269,6 +269,7 @@
             <li>Si le code a déjà été tapé dans ce navigateur, il n'est plus redemandé pendant une semaine.</li>
             <li>L'écran large aligne les onglets sur une ligne, centre le classeur, et fond les séries qui dépassent.</li>
             <li>Pokémon Argent et Argent SoulSilver ont leur propre boîte. Bleu montre la sienne. La photo du signalement part avec le texte.</li>
+            <li>La photo du signalement est celle de la page, au moment où tu touches l'insecte.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -279,7 +280,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=63";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=64";
 
       const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
       const PORTE_CLE = "aureum.porte";
@@ -328,7 +329,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=63");
+        import("./app.js?v=64");
       }
 
       function fermerPorte() {
