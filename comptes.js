@@ -151,7 +151,7 @@ export async function preparer() {
   const sauvee = emailPropre(localStorage.getItem(SESSION_KEY) || "");
   session = sauvee && comptes.users[sauvee] ? sauvee : "";
   try {
-    const reponse = await fetch(new URL("comptes.json?v=62", location.href));
+    const reponse = await fetch(new URL("comptes.json?v=65", location.href));
     if (reponse.ok) fusionner(await reponse.json());
   } catch {
     /* L'appareil garde sa copie si le fichier n'est pas joignable. */

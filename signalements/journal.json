@@ -1,6 +1,39 @@
 {
   "reports": [
     {
+      "id": "20261026-0738-m4s6",
+      "when": "26 oct. 2026 à 07:38",
+      "where": "Onglet univers · search · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#univers",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Dans univers il manque quelque items et jeu comme Pokémon argent et argent soulsilver",
+      "errors": [],
+      "image": "",
+      "traite": true
+    },
+    {
+      "id": "20261026-0733-ckbg",
+      "when": "26 oct. 2026 à 07:33",
+      "where": "Onglet univers · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#univers",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Dans univers certaines images ne se charge pas correctement",
+      "errors": [],
+      "image": "",
+      "traite": true
+    },
+    {
+      "id": "20261026-0732-cqx7",
+      "when": "26 oct. 2026 à 07:32",
+      "where": "Onglet etb · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#etb",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Dans ETB certains coffrets n’ont pas d’image",
+      "errors": [],
+      "image": "",
+      "traite": true
+    },
+    {
       "id": "20261025-2012-lo9q",
       "when": "25 oct. 2026, 20:12",
       "where": "Onglet galerie · search · Extension me05 · Fiche ecard1-6 · 402 × 874",
@@ -8,7 +41,8 @@
       "qui": "kevin@example.com",
       "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
       "errors": [],
-      "image": "20261025-2012-lo9q.jpg"
+      "image": "20261025-2012-lo9q.jpg",
+      "traite": false
     },
     {
       "id": "20261025-2006-h2ab",
@@ -18,7 +52,8 @@
       "qui": "kevin@example.com",
       "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": false
     },
     {
       "id": "20261025-2005-umt7",
@@ -28,7 +63,8 @@
       "qui": "kevin@example.com",
       "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": false
     }
   ]
 }
