@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=62";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=63";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -1403,8 +1403,8 @@ function coteHeroBox(item, euro) {
   return `
     <article class="cote-hero${dear ? " is-dear" : ""}">
       <button class="cote-open is-box" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
-        <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
-          <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="" decoding="async">
+        <span class="art is-box" data-label="${esc(initials(item.name))}">
+          ${boxImg(item, false)}
         </span>
       </button>
       <div>
@@ -1441,8 +1441,8 @@ function coteRang(row, index) {
     <li>
       <button type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
         <span class="rank">${rang}</span>
-        <span class="rank-art is-box" data-label="${esc(sealedLabel(item.kind))}">
-          <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="" decoding="async">
+        <span class="rank-art is-box" data-label="${esc(initials(item.name))}">
+          ${boxImg(item, false)}
         </span>
         <span class="rank-copy">
           <span class="rank-name">${esc(item.name)}</span>
@@ -1684,6 +1684,21 @@ function sealedLabel(kind) {
   return "Coffret";
 }
 
+function boxSrc(id, size = "low") {
+  const product = String(id);
+  if (size === "200w") return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_200w.jpg`;
+  const px = size === "high" ? 1000 : 400;
+  return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_in_${px}x${px}.jpg`;
+}
+
+function boxFallbacks(id, sizes) {
+  return sizes.map((size) => boxSrc(id, size)).join("|");
+}
+
+function boxImg(item, alt) {
+  return `<img src="${esc(boxSrc(item.id))}" data-fallbacks="${esc(boxFallbacks(item.id, ["high", "200w"]))}" alt="${esc(alt ? item.name : "")}" decoding="async">`;
+}
+
 function sealedRows() {
   const q = state.sealedQuery.trim().toLowerCase();
   let rows = Array.isArray(state.sealed) ? state.sealed : [];
@@ -1719,8 +1734,8 @@ function sealedTiles() {
     return `
       <article class="tile">
         <button class="tile-hit" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
-          <span class="art is-box" data-label="${esc(sealedLabel(item.kind))}">
-            <img src="https://tcgplayer-cdn.tcgplayer.com/product/${esc(item.id)}_in_400x400.jpg" alt="${esc(item.name)}" decoding="async">
+          <span class="art is-box" data-label="${esc(initials(item.name))}">
+            ${boxImg(item, true)}
           </span>
           <span class="tile-name">${esc(item.name)}</span>
           <span class="tile-meta">${esc(bits.join(" · "))}</span>
@@ -2099,11 +2114,10 @@ async function autrePhoto(id) {
 }
 
 function universFace(item) {
-  const label = esc(universLabel(item.kind));
-  const src = universSrc(item);
-  if (src) return `<span class="art is-box" data-label="${label}"><img class="shot" src="${esc(src)}" alt="" decoding="async"></span>`;
   const mark = esc(initials(item.name));
-  return `<span class="art is-box" data-label="${label}"><span class="monogram">${mark}</span></span>`;
+  const src = universSrc(item);
+  if (src) return `<span class="art is-box" data-label="${mark}"><img class="shot" src="${esc(src)}" alt="" decoding="async"></span>`;
+  return `<span class="art is-box" data-label="${mark}"><span class="monogram">${mark}</span></span>`;
 }
 
 function universTiles() {
@@ -3437,8 +3451,11 @@ function collBox(item, editable) {
   if (item.setName) bits.push(item.setName);
   const price = boxPriceHTML(item.usd);
   const src = item.image || (family === "sealed" || /^\d+$/.test(item.id) ? boxShot(item.id) : "");
+  const repli = family === "sealed" && /^\d+$/.test(String(item.id))
+    ? ` data-fallbacks="${esc(boxFallbacks(item.id, ["high", "200w"]))}"`
+    : "";
   const art = src
-    ? `<img class="shot" src="${esc(src)}" alt="${esc(item.name)}" decoding="async">`
+    ? `<img${family === "sealed" ? "" : ` class="shot"`} src="${esc(src)}"${repli} alt="${esc(item.name)}" decoding="async">`
     : `<span class="monogram">${esc(initials(item.name))}</span>`;
   const note = editable
     ? `<label class="coll-label">Commentaire
@@ -3449,7 +3466,7 @@ function collBox(item, editable) {
   return `
     <article class="coll-card" data-card="${esc(item.id)}" data-box="${esc(item.box)}">
       <button class="coll-open" type="button" data-action="product" data-family="${family}" data-id="${esc(item.id)}" aria-label="${esc(item.name)}">
-        <span class="art is-box" data-label="${esc(label)}">${art}</span>
+        <span class="art is-box" data-label="${esc(initials(item.name))}">${art}</span>
       </button>
       <div class="coll-body">
         <button class="coll-title" type="button" data-action="product" data-family="${family}" data-id="${esc(item.id)}">${esc(item.name)}</button>
@@ -4439,10 +4456,12 @@ function productHTML(item, family) {
   if (day) bits.push(day);
   const shot = family === "univers"
     ? universSrc(item).replace("_in_400x400", "_in_1000x1000")
-    : (/^\d+$/.test(String(item.id)) ? `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_1000x1000.jpg` : "");
-  const art = shot
-    ? `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}">`
-    : `<span class="monogram">${esc(initials(item.name))}</span>`;
+    : (/^\d+$/.test(String(item.id)) ? boxSrc(item.id, "high") : "");
+  const art = !shot
+    ? `<span class="monogram">${esc(initials(item.name))}</span>`
+    : family === "sealed"
+      ? `<img src="${esc(shot)}" data-fallbacks="${esc(boxFallbacks(item.id, ["low", "200w"]))}" alt="${esc(item.name)}">`
+      : `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}">`;
   const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
   const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
   const montant = family === "univers" ? universMontant(item) : (typeof item.usd === "number" ? item.usd : null);
@@ -4464,7 +4483,7 @@ function productHTML(item, family) {
     <article class="fiche">
       ${ficheBar()}
       <div class="fiche-art">
-        <div class="stage is-box" data-label="${esc(label)}">${art}</div>
+        <div class="stage is-box" data-label="${esc(initials(item.name))}">${art}</div>
       </div>
       <div class="fiche-body">
         <p class="kicker">${esc(bits.join(" · "))}</p>
@@ -4621,7 +4640,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=62", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=63", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4711,11 +4730,94 @@ function scanPriveVisible(racine) {
   });
 }
 
+function attendreImages(hote, delai = 1600) {
+  const images = [...hote.querySelectorAll("img")];
+  return Promise.race([
+    Promise.all(images.map((img) => img.decode().catch(() => {}))),
+    new Promise((resolve) => setTimeout(resolve, delai)),
+  ]);
+}
+
+async function toileHote(html2canvas, width, height, options, html) {
+  const hote = document.createElement("div");
+  hote.id = "capture-hote";
+  hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:1;`;
+  hote.innerHTML = html;
+  document.body.appendChild(hote);
+  try {
+    hote.querySelectorAll("img").forEach((img) => {
+      if (img.getBoundingClientRect().top > height + 40) {
+        img.remove();
+        return;
+      }
+      const src = img.getAttribute("src") || "";
+      const urls = src.includes("tcgplayer")
+        ? (img.dataset.fallbacks || "").split("|").filter((url) => url.includes("assets.tcgdex.net"))
+        : [];
+      const secours = urls[0] || "";
+      img.removeAttribute("src");
+      img.crossOrigin = "anonymous";
+      img.setAttribute("src", secours || src);
+    });
+    await attendreImages(hote);
+    hote.querySelectorAll("img").forEach((img) => {
+      if (!img.naturalWidth) return;
+      const copie = document.createElement("canvas");
+      copie.width = img.naturalWidth;
+      copie.height = img.naturalHeight;
+      try {
+        copie.getContext("2d").drawImage(img, 0, 0);
+        img.src = copie.toDataURL("image/jpeg", 0.82);
+      } catch {
+        /* Le scan privé reste vide : la photo publique ne peut pas le copier. */
+      }
+    });
+    return await html2canvas(hote, {
+      ...options,
+      x: 0,
+      y: 0,
+      scrollX: 0,
+      scrollY: 0,
+      ignoreElements: (element) => element.id === "signal" || element.id === "porte",
+      onclone: (doc) => {
+        figerCouleurs(doc);
+        const copie = doc.getElementById("capture-hote");
+        if (copie) copie.style.opacity = "1";
+      },
+    });
+  } finally {
+    hote.remove();
+  }
+}
+
+async function toileDuCabinet(html2canvas, width, height, options) {
+  const marques = [];
+  document.querySelectorAll(".tile, .set-tile, .coll-card, .pocket").forEach((element) => {
+    if (!horsCadre(element)) return;
+    element.dataset.hors = "1";
+    marques.push(element);
+  });
+  const entete = document.querySelector("header")?.outerHTML || "";
+  let html = "";
+  try {
+    html = `${entete}${document.querySelector("main")?.innerHTML || ""}`;
+  } finally {
+    marques.forEach((element) => delete element.dataset.hors);
+  }
+  const hote = document.createElement("template");
+  hote.innerHTML = html;
+  hote.content.querySelectorAll("[data-hors='1']").forEach((element) => element.remove());
+  const propre = document.createElement("div");
+  propre.append(...hote.content.childNodes);
+  return toileHote(html2canvas, width, height, options, propre.innerHTML);
+}
+
 async function priseEcran() {
   const html2canvas = await chargerCapture();
   const width = Math.max(1, Math.round(window.innerWidth));
   const height = Math.max(1, Math.round(window.innerHeight));
   const feuille = ["relief", "fiche"].map((id) => document.getElementById(id)).find((dialog) => dialog?.open) || null;
+  const signal = document.getElementById("signal");
   const options = {
     x: feuille ? 0 : window.scrollX,
     y: feuille ? 0 : window.scrollY,
@@ -4733,6 +4835,15 @@ async function priseEcran() {
     ignoreElements: (element) => element.id === "signal" || element.id === "porte" || element.id === "capture-hote" || (!feuille && horsCadre(element)),
     onclone: figerCouleurs,
   };
+  let rapide = null;
+  if (signal?.open && !feuille) {
+    try {
+      rapide = await toileDuCabinet(html2canvas, width, height, options);
+      if (rapide && clarteToile(rapide) >= 0.08) return rapide.toDataURL("image/jpeg", 0.6);
+    } catch {
+      rapide = null;
+    }
+  }
   let toile;
   try {
     toile = await html2canvas(feuille || document.body, options);
@@ -4741,71 +4852,13 @@ async function priseEcran() {
   }
   const scansPrives = scanPriveVisible(feuille || document);
   if (!toile || clarteToile(toile) < 0.08 || scansPrives) {
-    const hote = document.createElement("div");
-    hote.id = "capture-hote";
-    hote.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;overflow:hidden;opacity:0;pointer-events:none;background:#0b0a08;z-index:1;`;
-    const marques = [];
-    if (!feuille) {
-      document.querySelectorAll(".tile, .set-tile, .coll-card, .pocket").forEach((element) => {
-        if (!horsCadre(element)) return;
-        element.dataset.hors = "1";
-        marques.push(element);
-      });
-    }
-    const entete = feuille ? "" : (document.querySelector("header")?.outerHTML || "");
     try {
-      hote.innerHTML = `${entete}${feuille?.innerHTML || document.querySelector("main")?.innerHTML || ""}`;
-      hote.querySelectorAll("[data-hors='1']").forEach((element) => element.remove());
-    } finally {
-      marques.forEach((element) => delete element.dataset.hors);
-    }
-    document.body.appendChild(hote);
-    try {
-      hote.querySelectorAll("img").forEach((img) => {
-        if (img.getBoundingClientRect().top > height + 40) {
-          img.remove();
-          return;
-        }
-        const src = img.getAttribute("src") || "";
-        const urls = src.includes("tcgplayer")
-          ? (img.dataset.fallbacks || "").split("|").filter((url) => url.includes("assets.tcgdex.net"))
-          : [];
-        const secours = urls[0] || "";
-        img.removeAttribute("src");
-        img.crossOrigin = "anonymous";
-        img.setAttribute("src", secours || src);
-      });
-      await Promise.all([...hote.querySelectorAll("img")].map((img) => img.decode().catch(() => {})));
-      hote.querySelectorAll("img").forEach((img) => {
-        if (!img.naturalWidth) return;
-        const copie = document.createElement("canvas");
-        copie.width = img.naturalWidth;
-        copie.height = img.naturalHeight;
-        try {
-          copie.getContext("2d").drawImage(img, 0, 0);
-          img.src = copie.toDataURL("image/jpeg", 0.82);
-        } catch {
-          /* Le scan privé reste vide : la photo publique ne peut pas le copier. */
-        }
-      });
-      const autre = await html2canvas(hote, {
-        ...options,
-        x: 0,
-        y: 0,
-        scrollX: 0,
-        scrollY: 0,
-        ignoreElements: (element) => element.id === "signal" || element.id === "porte",
-        onclone: (doc) => {
-          figerCouleurs(doc);
-          const copie = doc.getElementById("capture-hote");
-          if (copie) copie.style.opacity = "1";
-        },
-      });
-      if (!toile || feuille || clarteToile(autre) >= clarteToile(toile)) toile = autre;
+      const autre = feuille
+        ? await toileHote(html2canvas, width, height, options, feuille.innerHTML || "")
+        : (rapide || await toileDuCabinet(html2canvas, width, height, options));
+      if (autre && (!toile || feuille || clarteToile(autre) >= clarteToile(toile))) toile = autre;
     } catch {
       /* La première photo reste si le second essai échoue. */
-    } finally {
-      hote.remove();
     }
   }
   if (!toile) throw new Error("capture");
@@ -5039,7 +5092,7 @@ async function ouvrirSignal() {
   try {
     shot = await Promise.race([
       priseEcran(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 8000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("lent")), 12000)),
     ]);
   } catch {
     shot = "";
@@ -5641,6 +5694,18 @@ function bind() {
   document.addEventListener("error", (event) => {
     const img = event.target;
     if (!(img instanceof HTMLImageElement)) return;
+    const boite = img.closest(".art.is-box, .stage.is-box, .rank-art.is-box");
+    const src = img.getAttribute("src") || "";
+    if (boite && img.dataset.relance !== "1" && src && !src.startsWith("data:")) {
+      img.dataset.relance = "1";
+      img.dataset.probing = "";
+      img.classList.remove("is-trying", "is-broken");
+      img.removeAttribute("src");
+      requestAnimationFrame(() => {
+        if (img.isConnected) img.setAttribute("src", src);
+      });
+      return;
+    }
     if (img.classList.contains("shot")) {
       if (img.naturalWidth > 0) img.classList.remove("is-trying", "is-broken");
       else markBroken(img);
