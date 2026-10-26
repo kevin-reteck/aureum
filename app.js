@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=68";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=69";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -4642,7 +4642,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=68", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=69", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4678,7 +4678,7 @@ function remplacerScanPrive(img) {
 }
 
 function figerCouleurs(doc) {
-  const props = ["color", "backgroundColor", "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor", "outlineColor", "boxShadow", "backgroundImage", "textDecorationColor"];
+  const props = ["color", "backgroundColor", "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor", "outlineColor", "boxShadow", "backgroundImage", "webkitMaskImage", "maskImage", "textDecorationColor"];
   const vue = doc.defaultView;
   doc.documentElement.classList.add("is-capture");
   const corps = doc.body;
@@ -4698,6 +4698,10 @@ function figerCouleurs(doc) {
     props.forEach((prop) => {
       const value = style[prop];
       if (!value) return;
+      if ((prop === "backgroundImage" || prop === "webkitMaskImage" || prop === "maskImage") && /svg|https?:/i.test(value)) {
+        element.style[prop] = "none";
+        return;
+      }
       if (/color-mix\(|oklch\(|oklab\(/.test(value)) {
         element.style[prop] = prop === "backgroundImage" ? "none" : "#14120f";
         return;
@@ -4863,6 +4867,13 @@ async function toileHtml(html2canvas, hote, width, height) {
           copie.style.opacity = "1";
         }
         figerCouleurs(doc);
+        const style = doc.createElement("style");
+        style.textContent = "html.is-capture *::before,html.is-capture *::after{background-image:none!important;mask-image:none!important;-webkit-mask-image:none!important}";
+        doc.head?.appendChild(style);
+        copie?.querySelectorAll("img").forEach((img) => {
+          const src = img.getAttribute("src") || "";
+          if (src && !src.startsWith("data:")) oterImage(img);
+        });
       } catch {
         /* Une couleur récente ne doit pas empêcher la photo. */
       }
@@ -4886,12 +4897,56 @@ async function priseEcran(instant) {
   }
   if (!toile) throw new Error("capture");
   try {
-    return toile.toDataURL("image/jpeg", 0.6);
+    return jpegToile(toile);
   } catch {
     hote.querySelectorAll("img").forEach(oterImage);
-    const autre = await toileHtml(html2canvas, hote, width, height);
-    return autre.toDataURL("image/jpeg", 0.6);
+    try {
+      const autre = await toileHtml(html2canvas, hote, width, height);
+      return jpegToile(autre);
+    } catch {
+      return photoTexte(hote, width, height);
+    }
   }
+}
+
+function jpegToile(toile) {
+  return toile.toDataURL("image/jpeg", 0.6);
+}
+
+function photoTexte(hote, width, height) {
+  const toile = document.createElement("canvas");
+  toile.width = width;
+  toile.height = height;
+  const ctx = toile.getContext("2d");
+  ctx.fillStyle = "#0b0a08";
+  ctx.fillRect(0, 0, width, height);
+  const origine = hote.getBoundingClientRect();
+  ctx.textBaseline = "top";
+  hote.querySelectorAll("h1, h2, p, button, a, span, label, strong, li").forEach((element) => {
+    const texte = [...element.childNodes].filter((noeud) => noeud.nodeType === 3).map((noeud) => noeud.textContent.trim()).filter(Boolean).join(" ");
+    if (!texte) return;
+    const box = element.getBoundingClientRect();
+    const y = box.top - origine.top;
+    const x = box.left - origine.left;
+    if (y > height || y < -30 || x > width) return;
+    ctx.fillStyle = /^h[12]$/i.test(element.tagName) ? "#f4efe6" : "#d9d0c3";
+    ctx.font = /^h[12]$/i.test(element.tagName) ? "600 28px Georgia, serif" : "16px Georgia, serif";
+    try {
+      ctx.fillText(texte.slice(0, 90), Math.max(8, x), Math.max(0, y));
+    } catch {
+      /* Une ligne illisible ne bloque pas le reste. */
+    }
+  });
+  hote.querySelectorAll("img").forEach((img) => {
+    if (!dessinOk(img)) return;
+    const box = img.getBoundingClientRect();
+    try {
+      ctx.drawImage(img, box.left - origine.left, box.top - origine.top, box.width || img.naturalWidth, box.height || img.naturalHeight);
+    } catch {
+      /* Une image refusée reste dehors. */
+    }
+  });
+  return toile.toDataURL("image/jpeg", 0.6);
 }
 
 function brouillonSignal(shot) {
