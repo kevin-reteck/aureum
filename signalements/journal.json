@@ -8,7 +8,8 @@
       "qui": "gossearthur17@gmail.com",
       "text": "Dans univers il manque quelque items et jeu comme Pokémon argent et argent soulsilver",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": true
     },
     {
       "id": "20261026-0733-ckbg",
@@ -18,7 +19,8 @@
       "qui": "gossearthur17@gmail.com",
       "text": "Dans univers certaines images ne se charge pas correctement",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": true
     },
     {
       "id": "20261026-0732-cqx7",
@@ -28,7 +30,8 @@
       "qui": "gossearthur17@gmail.com",
       "text": "Dans ETB certains coffrets n’ont pas d’image",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": true
     },
     {
       "id": "20261025-2012-lo9q",
@@ -38,7 +41,8 @@
       "qui": "kevin@example.com",
       "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
       "errors": [],
-      "image": "20261025-2012-lo9q.jpg"
+      "image": "20261025-2012-lo9q.jpg",
+      "traite": false
     },
     {
       "id": "20261025-2006-h2ab",
@@ -48,7 +52,8 @@
       "qui": "kevin@example.com",
       "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": false
     },
     {
       "id": "20261025-2005-umt7",
@@ -58,7 +63,8 @@
       "qui": "kevin@example.com",
       "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
       "errors": [],
-      "image": ""
+      "image": "",
+      "traite": false
     }
   ]
 }

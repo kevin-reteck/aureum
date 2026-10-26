@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=64";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=65";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -4640,7 +4640,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=64", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=65", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -4859,6 +4859,7 @@ function fusionSignaux(listes) {
       file: report.file || deja.file || "",
       image: report.image || deja.image || "",
       text: report.text || deja.text || "",
+      traite: Boolean(report.traite || deja.traite),
     });
   });
   return [...map.values()].sort((a, b) => String(b.id).localeCompare(String(a.id)));
@@ -4990,12 +4991,16 @@ function paintSignaux() {
   }
   liste.innerHTML = signauxVisibles.map((report) => {
     const src = srcVisuel(report);
+    const traite = report.traite === true;
     return `
-    <div class="signal-item">
+    <div class="signal-item${traite ? " is-traite" : ""}">
       ${src ? `<img src="${esc(src)}" alt="">` : `<span class="signal-manque" aria-hidden="true"></span>`}
       <div class="signal-voir">
-        <strong>${esc(report.when || "Signalement")}</strong>
-        <span>${esc(report.text || "")}</span>
+        <p class="signal-ligne">
+          <strong>${esc(report.when || "Signalement")}</strong>
+          ${traite ? `<span class="signal-etat">Traité</span>` : ""}
+        </p>
+        <span class="signal-texte">${esc(report.text || "")}</span>
       </div>
     </div>`;
   }).join("");

@@ -15,3 +15,7 @@ Un script les copie ici depuis le canal d'envoi. Les pièces jointes de ce canal
 ## Pour les lire
 
 Ouvrir `journal.json`, puis la photo et le texte du même identifiant.
+
+## Déjà traité
+
+`Statut : Traité` dans le fichier, ou `"traite": true` dans `journal.json`, veut dire que le correctif est déjà dans le cabinet. On ne le refait pas. Dans l'application, la ligne est barrée et porte la mention Traité. `Statut : Ouvert` est encore à faire.

@@ -90,6 +90,7 @@ async function main() {
       `- Adresse : ${url}`,
       `- Compte : ${qui || "inconnu"}`,
       image ? `- Photo : ${image}` : "- Photo : aucune",
+      "- Statut : Ouvert",
       "",
       text,
       "",
@@ -98,7 +99,7 @@ async function main() {
       "",
     ].join("\n");
     await writeFile(new URL(`${id}.md`, DOSSIER), md, "utf8");
-    journal.reports.push({ id, when, where, url, qui, text, errors, image });
+    journal.reports.push({ id, when, where, url, qui, text, errors, image, traite: false });
     connus.add(id);
     ajoutes += 1;
   }
