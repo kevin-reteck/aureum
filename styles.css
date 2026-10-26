@@ -461,6 +461,7 @@ h3 { margin: 0; font-size: 1.05rem; font-weight: 560; }
 }
 
 .controls { display: flex; flex-wrap: wrap; gap: 10px; }
+.controls > .note { flex-basis: 100%; margin: 0; }
 
 label.field {
   display: flex;
@@ -1779,6 +1780,7 @@ html.is-capture, html.is-capture * , html.is-capture *::backdrop {
     grid-template-columns: 1fr 1fr;
     width: 100%;
   }
+  .controls > .note,
   .controls .field:has(#set-select),
   .controls .field:has(#sort-select) { grid-column: 1 / -1; }
   label.field { min-width: 0; }

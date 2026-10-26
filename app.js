@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=70";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=71";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -452,7 +452,7 @@ function metaLine(card) {
   if (card.localId) bits.push(`n° ${card.localId}`);
   if (card.lang && card.lang !== state.market && MARKETS[card.lang]) bits.push(MARKETS[card.lang].label);
   if (firstEditionId(card)) bits.push("1re édition");
-  if (card.rarity) bits.push(card.rarity);
+  if (card.rarity && card.rarity !== "None") bits.push(card.rarity);
   return bits.join(" · ");
 }
 
@@ -963,9 +963,11 @@ function toolbarHTML() {
   const options = state.gallerySets.map((set) => `
     <option value="${esc(set.id)}"${set.id === state.setId ? " selected" : ""}>${esc(prettyName(set.name))}</option>
   `).join("");
-  const select = options
-    ? `<label class="field">Extension<select id="set-select">${options}</select></label>`
-    : "";
+  const select = state.view === "search"
+    ? `<p class="note">Toutes les cartes, de toutes les extensions.</p>`
+    : options
+      ? `<label class="field">Extension<select id="set-select">${options}</select></label>`
+      : "";
   return `
     <div class="toolbar">
       <div class="controls">
@@ -999,7 +1001,7 @@ function headHTML() {
     return `
       <header class="section-head">
         <div>
-          <p class="kicker">Recherche</p>
+          <p class="kicker">Toutes les cartes</p>
           <h2>Résultats pour « ${esc(state.query)} »</h2>
         </div>
         <p class="lede" id="grille-status">Lecture du catalogue…</p>
@@ -1011,7 +1013,7 @@ function headHTML() {
       return `
         <header class="section-head">
           <div>
-            <p class="kicker">Recherche</p>
+            <p class="kicker">Toutes les cartes</p>
             <h2>Résultats pour « ${esc(state.query)} »</h2>
           </div>
           <p class="lede" id="grille-status">Aucune carte ne porte ce nom.</p>
@@ -1026,7 +1028,7 @@ function headHTML() {
     return `
       <header class="section-head">
         <div>
-          <p class="kicker">Recherche</p>
+          <p class="kicker">Toutes les cartes</p>
           <h2>Résultats pour « ${esc(state.query)} »</h2>
         </div>
         <p class="lede" id="grille-status">${shown} ${mot} sur ${state.searchTotal}.${extra}</p>
@@ -3170,7 +3172,7 @@ async function searchBinder(raw) {
     return;
   }
   try {
-    const list = await fetchJSON(`/cards?name=${encodeURIComponent(query)}`);
+    const list = await cartesParNom(query);
     if (state.binderQuery !== query) return;
     state.binderHits = binderHitList(list);
   } catch {
@@ -4097,6 +4099,31 @@ async function loadSet(seriesId, setId, { focus = true } = {}) {
   }
 }
 
+function languesCatalogue() {
+  return [...new Set([state.market || "fr", "fr", "en"])];
+}
+
+async function cartesParNom(query) {
+  const langues = languesCatalogue();
+  const listes = await Promise.all(langues.map(async (lang) => {
+    try {
+      const list = await fetchJSON(`/cards?name=${encodeURIComponent(query)}`, lang);
+      return (Array.isArray(list) ? list : []).map((card) => ({ ...card, lang }));
+    } catch {
+      return [];
+    }
+  }));
+  const marche = state.market || "fr";
+  const ordre = langues.map((lang, index) => index).sort((a, b) => Number(langues[a] === marche) - Number(langues[b] === marche));
+  const parId = new Map();
+  ordre.forEach((index) => {
+    listes[index].forEach((card) => {
+      if (card?.id) parId.set(card.id, card);
+    });
+  });
+  return [...parId.values()];
+}
+
 async function runSearch(raw) {
   const query = String(raw || "").trim();
   state.query = query;
@@ -4117,9 +4144,8 @@ async function runSearch(raw) {
   rememberTab("galerie");
   render();
   try {
-    const list = await fetchJSON(`/cards?name=${encodeURIComponent(query)}`);
+    const rows = await cartesParNom(query);
     if (token !== epoch) return;
-    const rows = Array.isArray(list) ? list : [];
     state.searchTotal = rows.length;
     state.searchCards = rows;
     state.loading = false;
@@ -4642,7 +4668,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=70", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=71", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
