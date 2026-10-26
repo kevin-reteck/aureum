@@ -1,6 +1,28 @@
 {
   "reports": [
     {
+      "id": "20261026-1356-u25u",
+      "when": "26 oct. 2026 à 13:56",
+      "where": "Onglet extensions · Extension me05 · 402 × 874",
+      "url": "https://kevin-reteck.github.io/aureum/#extensions",
+      "qui": "kevincornec.revit@gmail.com",
+      "text": "Test",
+      "errors": [],
+      "image": "",
+      "traite": false
+    },
+    {
+      "id": "20261026-1356-pnza",
+      "when": "26 oct. 2026 à 13:56",
+      "where": "Onglet galerie · Extension me05 · 402 × 874",
+      "url": "https://kevin-reteck.github.io/aureum/#galerie",
+      "qui": "kevincornec.revit@gmail.com",
+      "text": "Test",
+      "errors": [],
+      "image": "",
+      "traite": false
+    },
+    {
       "id": "20261026-1338-azbm",
       "when": "26 oct. 2026 à 13:38",
       "where": "Onglet extensions · Extension me05 · 402 × 874",
