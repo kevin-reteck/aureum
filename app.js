@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=66";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=67";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -4640,7 +4640,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=66", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=67", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5099,6 +5099,7 @@ function montrerSignal(report, note) {
 let signalOuverture = false;
 let signalGeneration = 0;
 let signalPhoto = Promise.resolve("");
+let signalEchec = "";
 
 async function ouvrirSignal() {
   const dialog = document.getElementById("signal");
@@ -5115,7 +5116,13 @@ async function ouvrirSignal() {
   lockSheet();
   texte?.focus();
   chargerSignaux();
-  const promesse = priseEcran(instant).catch(() => "").finally(() => instant.hote.remove());
+  const promesse = priseEcran(instant).then((photo) => {
+    signalEchec = "";
+    return photo;
+  }).catch((erreur) => {
+    signalEchec = String(erreur && erreur.message || erreur || "capture").slice(0, 180);
+    return "";
+  }).finally(() => instant.hote.remove());
   signalPhoto = promesse;
   let shot = "";
   try {
@@ -5125,6 +5132,7 @@ async function ouvrirSignal() {
     ]);
   } catch {
     shot = "";
+    if (!signalEchec) signalEchec = "lent";
   } finally {
     signalOuverture = false;
   }
@@ -5180,6 +5188,9 @@ function bindSignal() {
           new Promise((resolve) => setTimeout(() => resolve(""), 6000)),
         ]);
         if (photo) report.shot = photo;
+      }
+      if (!report.shot && signalEchec) {
+        report.errors = [...(report.errors || []), signalEchec].slice(0, 6);
       }
       const file = await publierNtfy(report);
       memoriserSignal({ ...report, file, shot: "" });
