@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=71";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=72";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -470,10 +470,60 @@ function initials(name) {
     .toUpperCase();
 }
 
+let visuels = { logos: {}, cartes: {} };
+
+function imageDe(card) {
+  if (typeof card?.image === "string" && card.image.startsWith("https://assets.tcgdex.net/")) return card.image;
+  const local = visuels.cartes?.[card?.id];
+  if (typeof local !== "string") return "";
+  if (local.startsWith("https://assets.tcgdex.net/")) return local;
+  if (/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(local)) return local;
+  if (/^https:\/\/images\.pokemontcg\.io\/[a-z0-9.]+\/[\w.-]+\.png$/i.test(local)) return local;
+  return "";
+}
+
 function artCandidates(base, size) {
-  if (typeof base !== "string" || !base.startsWith("https://assets.tcgdex.net/")) return [];
+  if (typeof base !== "string") return [];
+  const produit = base.match(/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/(\d+)_in_\d+x\d+\.jpg$/);
+  if (produit) {
+    const low = `https://tcgplayer-cdn.tcgplayer.com/product/${produit[1]}_in_400x400.jpg`;
+    const high = `https://tcgplayer-cdn.tcgplayer.com/product/${produit[1]}_in_1000x1000.jpg`;
+    return size === "high" ? [high, low] : [low, high];
+  }
+  if (/^https:\/\/images\.pokemontcg\.io\/[a-z0-9.]+\/[\w.-]+\.png$/i.test(base) && !/_hires\.png$/i.test(base)) {
+    const high = base.replace(/\.png$/i, "_hires.png");
+    return size === "high" ? [high, base] : [base, high];
+  }
+  if (!base.startsWith("https://assets.tcgdex.net/")) return [];
   const order = size === "high" ? ["high", "low"] : ["low", "high"];
   return order.flatMap((item) => [`${base}/${item}.webp`, `${base}/${item}.png`]);
+}
+
+async function loadVisuels() {
+  try {
+    const response = await fetch(new URL("visuels.json?v=72", location.href));
+    if (!response.ok) return;
+    const data = await response.json();
+    const logos = {};
+    const cartes = {};
+    if (data?.logos && typeof data.logos === "object") {
+      Object.entries(data.logos).forEach(([id, url]) => {
+        if (!cleanId(id, "") || typeof url !== "string" || !url.startsWith("https://")) return;
+        if (!/^https:\/\/(assets\.tcgdex\.net|images\.pokemontcg\.io|images\.scrydex\.com)\//.test(url)) return;
+        logos[id] = url;
+      });
+    }
+    if (data?.cartes && typeof data.cartes === "object") {
+      Object.entries(data.cartes).forEach(([id, url]) => {
+        if (typeof id !== "string" || !/^[\w.%:-]+$/.test(id) || typeof url !== "string") return;
+        if (!url.startsWith("https://assets.tcgdex.net/") && !/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(url) && !/^https:\/\/images\.pokemontcg\.io\/[a-z0-9.]+\/[\w.-]+\.png$/i.test(url)) return;
+        cartes[id] = url;
+      });
+    }
+    visuels = { logos, cartes };
+  } catch {
+    /* Les scans du catalogue restent utilisés. */
+  }
 }
 
 function productId(value) {
@@ -611,7 +661,7 @@ function rescueBlankScan(img, card) {
 
 function imgTag(card, size, eager) {
   const quality = size === "high" ? "high" : "low";
-  const urls = artCandidates(card.image, size);
+  const urls = artCandidates(imageDe(card), size);
   const edition = editionArt(card, quality);
   if (edition) urls.unshift(edition);
   if (!urls.length) {
@@ -626,6 +676,10 @@ function imgTag(card, size, eager) {
 }
 
 function logoTag(seriesId, setId) {
+  const connu = visuels.logos?.[setId];
+  if (typeof connu === "string" && connu.startsWith("https://")) {
+    return `<img src="${esc(connu)}" alt="">`;
+  }
   const lang = state.market || "fr";
   const primary = `https://assets.tcgdex.net/${lang}/${seriesId}/${setId}/logo`;
   const fr = `https://assets.tcgdex.net/fr/${seriesId}/${setId}/logo`;
@@ -863,14 +917,15 @@ function patchCard(full) {
       }
     }
     const edition = editionArt(full, quality);
+    const base = imageDe(full);
     if (img && edition && img.getAttribute("src") !== edition && !String(img.getAttribute("src") || "").includes("tcgplayer-cdn")) {
-      img.dataset.fallbacks = artCandidates(full.image, quality).join("|");
+      img.dataset.fallbacks = artCandidates(base, quality).join("|");
       img.dataset.market = "";
       img.dataset.probing = "";
       img.classList.remove("is-broken", "is-trying");
       img.src = edition;
-    } else if (img && safeArt(full.image, quality) && !img.getAttribute("src")) {
-      img.src = safeArt(full.image, quality);
+    } else if (img && safeArt(base, quality) && !img.getAttribute("src")) {
+      img.src = safeArt(base, quality);
     } else if (img && marketArt(full, quality)) {
       rescueBlankScan(img, full);
     }
@@ -2226,7 +2281,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch("./univers.json");
+      const response = await fetch(new URL("univers.json?v=72", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -4668,7 +4723,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=71", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=72", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -6104,7 +6159,8 @@ function boot() {
       state.visit = { error: true };
     })
     : Promise.resolve();
-  openVisit.then(() => {
+  const visuelsReady = loadVisuels();
+  Promise.all([openVisit, visuelsReady]).then(() => {
     const tab = state.visit ? "collection" : initialTab();
     rememberTab(tab);
     render();
