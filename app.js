@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=67";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=68";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -4579,7 +4579,9 @@ function idFichier(id) {
 }
 
 function srcCapture(shot) {
-  return typeof shot === "string" && /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(shot) ? shot : "";
+  if (typeof shot !== "string") return "";
+  const propre = shot.replace(/\s/g, "");
+  return /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(propre) ? propre : "";
 }
 
 function idSignal() {
@@ -4640,7 +4642,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=67", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=68", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5117,8 +5119,12 @@ async function ouvrirSignal() {
   texte?.focus();
   chargerSignaux();
   const promesse = priseEcran(instant).then((photo) => {
-    signalEchec = "";
-    return photo;
+    if (srcCapture(photo)) {
+      signalEchec = "";
+      return photo;
+    }
+    if (!signalEchec) signalEchec = "La photo n'était pas prête.";
+    return "";
   }).catch((erreur) => {
     signalEchec = String(erreur && erreur.message || erreur || "capture").slice(0, 180);
     return "";
@@ -5132,7 +5138,7 @@ async function ouvrirSignal() {
     ]);
   } catch {
     shot = "";
-    if (!signalEchec) signalEchec = "lent";
+    if (!signalEchec) signalEchec = "La photo n'était pas prête.";
   } finally {
     signalOuverture = false;
   }
@@ -5181,16 +5187,19 @@ function bindSignal() {
       bouton.textContent = "Envoi…";
     }
     try {
-      if (!report.shot) {
+      if (!srcCapture(report.shot)) {
         if (note) note.textContent = "La photo se joint à l'envoi.";
         const photo = await Promise.race([
           signalPhoto,
-          new Promise((resolve) => setTimeout(() => resolve(""), 6000)),
+          new Promise((resolve) => setTimeout(() => resolve(""), 12000)),
         ]);
-        if (photo) report.shot = photo;
+        if (srcCapture(photo)) report.shot = photo;
       }
-      if (!report.shot && signalEchec) {
-        report.errors = [...(report.errors || []), signalEchec].slice(0, 6);
+      if (!srcCapture(report.shot)) {
+        const pourquoi = signalEchec || "La photo n'était pas prête.";
+        const nav = (navigator.userAgent || "").replace(/\s+/g, " ").slice(0, 140);
+        report.errors = [...(report.errors || []), pourquoi, nav].filter(Boolean).slice(0, 6);
+        report.shot = "";
       }
       const file = await publierNtfy(report);
       memoriserSignal({ ...report, file, shot: "" });
