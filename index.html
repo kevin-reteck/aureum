@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=72">
+    <link rel="stylesheet" href="styles.css?v=74">
     <style>html,body{background:#0b0a08}</style>
     <script>
       window.aureumErreurs = [];
@@ -31,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "72";
+      const VERSION_PAGE = "74";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -278,6 +278,7 @@
             <li>Après l'envoi, le signalement se ferme.</li>
             <li>La recherche regarde toutes les cartes, de toutes les extensions.</li>
             <li>Les cartes sans scan français montrent leur illustration, et les extensions affichent leur logo.</li>
+            <li>Une carte au texte français montre son scan français.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -288,7 +289,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=72";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=74";
 
       const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
       const PORTE_CLE = "aureum.porte";
@@ -337,7 +338,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=72");
+        import("./app.js?v=74");
       }
 
       function fermerPorte() {

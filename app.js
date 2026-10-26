@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=72";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=74";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -456,11 +456,6 @@ function metaLine(card) {
   return bits.join(" · ");
 }
 
-function safeArt(base, size) {
-  if (typeof base !== "string" || !base.startsWith("https://assets.tcgdex.net/")) return "";
-  return `${base}/${size}.webp`;
-}
-
 function initials(name) {
   return String(name || "?")
     .split(/\s+/)
@@ -472,14 +467,21 @@ function initials(name) {
 
 let visuels = { logos: {}, cartes: {} };
 
-function imageDe(card) {
-  if (typeof card?.image === "string" && card.image.startsWith("https://assets.tcgdex.net/")) return card.image;
-  const local = visuels.cartes?.[card?.id];
-  if (typeof local !== "string") return "";
-  if (local.startsWith("https://assets.tcgdex.net/")) return local;
-  if (/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(local)) return local;
-  if (/^https:\/\/images\.pokemontcg\.io\/[a-z0-9.]+\/[\w.-]+\.png$/i.test(local)) return local;
+function urlCarte(url) {
+  if (typeof url !== "string") return "";
+  if (url.startsWith("https://assets.tcgdex.net/")) return url;
+  if (/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(url)) return url;
+  if (/^https:\/\/images\.pokemontcg\.io\/[a-z0-9.]+\/[\w.-]+\.png$/i.test(url)) return url;
+  if (/^https:\/\/pokecardex-scans\.b-cdn\.net\/sets\/[A-Za-z0-9-]+\/FR\/\d+\.jpg\?class=(?:sd|md|hd)$/.test(url)) return url;
+  if (/^https:\/\/www\.pokepedia\.fr\/images\/[0-9a-f]\/[0-9a-f]{2}\/Carte_[A-Za-z0-9%._-]+\.png$/.test(url)) return url;
   return "";
+}
+
+function imageDe(card) {
+  const local = urlCarte(visuels.cartes?.[card?.id]);
+  const remote = typeof card?.image === "string" && card.image.startsWith("https://assets.tcgdex.net/") ? card.image : "";
+  if (local && remote.includes("/en/")) return local;
+  return remote || local;
 }
 
 function artCandidates(base, size) {
@@ -494,6 +496,12 @@ function artCandidates(base, size) {
     const high = base.replace(/\.png$/i, "_hires.png");
     return size === "high" ? [high, base] : [base, high];
   }
+  const poke = base.match(/^https:\/\/pokecardex-scans\.b-cdn\.net\/sets\/([A-Za-z0-9-]+)\/FR\/(\d+)\.jpg\?class=(?:sd|md|hd)$/);
+  if (poke) {
+    const fichier = (classe) => `https://pokecardex-scans.b-cdn.net/sets/${poke[1]}/FR/${poke[2]}.jpg?class=${classe}`;
+    return size === "high" ? [fichier("hd"), fichier("md")] : [fichier("sd"), fichier("md")];
+  }
+  if (/^https:\/\/www\.pokepedia\.fr\/images\/[0-9a-f]\/[0-9a-f]{2}\/Carte_[A-Za-z0-9%._-]+\.png$/.test(base)) return [base];
   if (!base.startsWith("https://assets.tcgdex.net/")) return [];
   const order = size === "high" ? ["high", "low"] : ["low", "high"];
   return order.flatMap((item) => [`${base}/${item}.webp`, `${base}/${item}.png`]);
@@ -501,7 +509,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=72", location.href));
+    const response = await fetch(new URL("visuels.json?v=74", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -509,14 +517,14 @@ async function loadVisuels() {
     if (data?.logos && typeof data.logos === "object") {
       Object.entries(data.logos).forEach(([id, url]) => {
         if (!cleanId(id, "") || typeof url !== "string" || !url.startsWith("https://")) return;
-        if (!/^https:\/\/(assets\.tcgdex\.net|images\.pokemontcg\.io|images\.scrydex\.com)\//.test(url)) return;
+        if (!/^https:\/\/(assets\.tcgdex\.net|images\.pokemontcg\.io|images\.scrydex\.com)\//.test(url) && !/^https:\/\/pokecardex\.b-cdn\.net\/assets\/images\/logos\/[A-Za-z0-9-]+\.png$/.test(url)) return;
         logos[id] = url;
       });
     }
     if (data?.cartes && typeof data.cartes === "object") {
       Object.entries(data.cartes).forEach(([id, url]) => {
-        if (typeof id !== "string" || !/^[\w.%:-]+$/.test(id) || typeof url !== "string") return;
-        if (!url.startsWith("https://assets.tcgdex.net/") && !/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(url) && !/^https:\/\/images\.pokemontcg\.io\/[a-z0-9.]+\/[\w.-]+\.png$/i.test(url)) return;
+        if (typeof id !== "string" || !/^[\w.%:!-]+$/.test(id) || typeof url !== "string") return;
+        if (!urlCarte(url)) return;
         cartes[id] = url;
       });
     }
@@ -662,11 +670,11 @@ function rescueBlankScan(img, card) {
 function imgTag(card, size, eager) {
   const quality = size === "high" ? "high" : "low";
   const urls = artCandidates(imageDe(card), size);
-  const edition = editionArt(card, quality);
-  if (edition) urls.unshift(edition);
   if (!urls.length) {
+    const edition = editionArt(card, quality);
+    if (edition) urls.push(edition);
     const market = marketArt(card, quality);
-    if (market) urls.push(market);
+    if (market && market !== edition) urls.push(market);
   }
   const mark = esc(initials(card.name));
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
@@ -916,17 +924,17 @@ function patchCard(full) {
         });
       }
     }
-    const edition = editionArt(full, quality);
     const base = imageDe(full);
-    if (img && edition && img.getAttribute("src") !== edition && !String(img.getAttribute("src") || "").includes("tcgplayer-cdn")) {
-      img.dataset.fallbacks = artCandidates(base, quality).join("|");
+    const scan = artCandidates(base, quality)[0] || "";
+    if (img && scan && String(img.getAttribute("src") || "").includes("tcgplayer-cdn")) {
+      img.dataset.fallbacks = artCandidates(base, quality).slice(1).join("|");
       img.dataset.market = "";
       img.dataset.probing = "";
       img.classList.remove("is-broken", "is-trying");
-      img.src = edition;
-    } else if (img && safeArt(base, quality) && !img.getAttribute("src")) {
-      img.src = safeArt(base, quality);
-    } else if (img && marketArt(full, quality)) {
+      img.src = scan;
+    } else if (img && scan && !img.getAttribute("src")) {
+      img.src = scan;
+    } else if (img && !scan && marketArt(full, quality)) {
       rescueBlankScan(img, full);
     }
     const meta = node.querySelector("[data-slot='meta']");
@@ -2281,7 +2289,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=72", location.href));
+      const response = await fetch(new URL("univers.json?v=74", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -4723,7 +4731,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=72", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=74", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
