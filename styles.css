@@ -546,6 +546,13 @@ select:disabled { opacity: 0.72; }
   font-size: 1.15rem;
   letter-spacing: -0.03em;
 }
+.price-name {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 0.72em;
+  letter-spacing: 0;
+  color: var(--muted);
+}
 .price-missing { color: var(--muted); font-size: 0.86rem; }
 a.btn { display: inline-flex; text-decoration: none; }
 .delta { font-size: 0.82rem; font-weight: 600; }
@@ -2042,6 +2049,8 @@ html.is-capture, html.is-capture * , html.is-capture *::backdrop {
   line-height: 0.92;
   color: var(--gold-2);
 }
+.cote-price.is-part { font-size: clamp(1.55rem, 4.4vw, 2.35rem); margin-top: 0.28rem; }
+.cote-price .price-name { font-size: 0.48em; }
 .cote-hero.is-dear .cote-price { text-shadow: none; }
 .cote-wow {
   margin: 0 0 6px;

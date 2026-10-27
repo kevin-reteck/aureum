@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=74";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=75";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -509,7 +509,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=74", location.href));
+    const response = await fetch(new URL("visuels.json?v=75", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -1985,22 +1985,45 @@ function universMontant(item) {
   return null;
 }
 
+function universParts(item) {
+  const parts = item?.sale?.parts;
+  if (!Array.isArray(parts)) return [];
+  return parts.filter((part) => part && typeof part.name === "string" && part.name && typeof part.usd === "number");
+}
+
+function venteChange() {
+  const mode = usdDisplayMode();
+  if (mode === "pending") return " Conversion en cours.";
+  if (mode === "unavailable") return " La conversion est indisponible.";
+  if (mode === "converted") return activeCurrency() === "JPY" ? " Affiché en yens." : " Affiché en euros.";
+  return "";
+}
+
 function venteNote(item) {
   const sale = item?.sale;
   if (!sale || typeof sale.usd !== "number") return "Pas de cote unitaire pour cette ligne.";
   const when = formatDay(sale.at ? `${sale.at}T12:00:00` : "");
+  const date = when ? ` Vérifiée le ${when}.` : "";
+  const change = venteChange();
+  const parts = universParts(item);
+  if (parts.length >= 2) {
+    const lines = parts.map((part) => `${part.name} ${usdPlain(part.usd)}`).join(", ");
+    return `Chaque version, exemplaire complet, d'après les ventes terminées : ${lines}.${date}${change} Pas une offre.`;
+  }
   const grade = sale.kind === "neuf"
     ? "exemplaire neuf"
     : sale.kind === "sans-boite"
       ? "exemplaire sans boîte"
       : "exemplaire complet";
-  const date = when ? ` Vérifiée le ${when}.` : "";
-  const mode = usdDisplayMode();
-  let change = "";
-  if (mode === "pending") change = " Conversion en cours.";
-  else if (mode === "unavailable") change = " La conversion est indisponible.";
-  else if (mode === "converted") change = activeCurrency() === "JPY" ? " Affiché en yens." : " Affiché en euros.";
   return `Prix d'un ${grade}, d'après les ventes terminées.${date}${change} Pas une offre.`;
+}
+
+function universPrixHTML(item) {
+  const parts = universParts(item);
+  if (parts.length >= 2) {
+    return parts.map((part) => `<span class="price"><span class="price-name">${esc(part.name)}</span> ${esc(usdPlain(part.usd))}</span>`).join("");
+  }
+  return usdHTML(universMontant(item));
 }
 
 function loadPhotos() {
@@ -2193,7 +2216,7 @@ function universTiles() {
     if (item.set) bits.push(item.set);
     const day = releasedLabel(item.released);
     if (day) bits.push(day);
-    const price = usdHTML(universMontant(item));
+    const price = universPrixHTML(item);
     return `
       <article class="tile univers-tile">
         ${universFace(item)}
@@ -2289,7 +2312,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=74", location.href));
+      const response = await fetch(new URL("univers.json?v=75", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -4554,9 +4577,13 @@ function productHTML(item, family) {
   const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
   const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
   const montant = family === "univers" ? universMontant(item) : (typeof item.usd === "number" ? item.usd : null);
+  const parts = family === "univers" ? universParts(item) : [];
   const note = typeof item.usd === "number"
     ? tcgplayerNote(when)
     : (family === "univers" ? venteNote(item) : "Pas de cote unitaire pour cette ligne.");
+  const prix = parts.length >= 2
+    ? parts.map((part) => `<p class="cote-price is-part"><span class="price-name">${esc(part.name)}</span> ${esc(usdPlain(part.usd))}</p>`).join("")
+    : (typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : "");
   const cherche = state.photoBusy === String(item.id);
   const deja = inCollection(String(item.id));
   const plein = !deja && state.collection.items.length >= COLL_MAX;
@@ -4577,7 +4604,7 @@ function productHTML(item, family) {
       <div class="fiche-body">
         <p class="kicker">${esc(bits.join(" · "))}</p>
         <h2>${esc(item.name)}</h2>
-        ${typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : ""}
+        ${prix}
         <p class="note">${esc(note)}</p>
         ${photoBtn}
       </div>
@@ -4731,7 +4758,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=74", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=75", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
