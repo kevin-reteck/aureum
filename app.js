@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=76";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=77";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -509,7 +509,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=76", location.href));
+    const response = await fetch(new URL("visuels.json?v=77", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -2064,11 +2064,26 @@ function photoChoisie(id) {
 }
 
 function universSrc(item) {
+  const local = imageLocale(item?.image);
+  if (local) return local;
   const choisi = photoChoisie(item?.id);
   if (choisi) return choisi;
   if (typeof item?.image === "string" && item.image.startsWith("https://")) return item.image;
+  const premiere = Array.isArray(item?.faces)
+    ? item.faces.map((face) => imageLocale(face?.image)).find(Boolean)
+    : "";
+  if (premiere) return premiere;
   if (/^\d+$/.test(String(item?.id))) return `https://tcgplayer-cdn.tcgplayer.com/product/${item.id}_in_400x400.jpg`;
   return "";
+}
+
+function universFaces(item) {
+  const faces = Array.isArray(item?.faces)
+    ? item.faces.filter((face) => face && typeof face.name === "string" && face.name && imageLocale(face.image))
+    : [];
+  if (faces.length >= 2) return faces.map((face) => ({ name: face.name, image: imageLocale(face.image) }));
+  const src = universSrc(item);
+  return src ? [{ name: "", image: src }] : [];
 }
 
 function normPhoto(value) {
@@ -2203,9 +2218,11 @@ async function autrePhoto(id) {
 
 function universFace(item) {
   const mark = esc(initials(item.name));
-  const src = universSrc(item);
-  if (src) return `<span class="art is-box" data-label="${mark}"><img class="shot" src="${esc(src)}" alt="" decoding="async"></span>`;
-  return `<span class="art is-box" data-label="${mark}"><span class="monogram">${mark}</span></span>`;
+  const faces = universFaces(item);
+  if (!faces.length) return `<span class="art is-box" data-label="${mark}"><span class="monogram">${mark}</span></span>`;
+  const pair = faces.length >= 2 ? " is-pair" : "";
+  const imgs = faces.map((face) => `<img class="shot" src="${esc(face.image)}" alt="${esc(face.name || item.name)}" decoding="async" referrerpolicy="no-referrer">`).join("");
+  return `<span class="art is-box${pair}" data-label="${mark}">${imgs}</span>`;
 }
 
 function universTiles() {
@@ -2312,7 +2329,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=76", location.href));
+      const response = await fetch(new URL("univers.json?v=77", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -3288,8 +3305,13 @@ function looseNote(value) {
   return String(value || "").replace(/[\u0000-\u001F]/g, "").slice(0, NOTE_MAX);
 }
 
+function imageLocale(url) {
+  return typeof url === "string" && /^jeux\/[a-z0-9-]+\.jpg$/.test(url) ? url : "";
+}
+
 function imagePiece(url) {
   if (typeof url !== "string") return "";
+  if (imageLocale(url)) return url;
   if (url.startsWith("https://archives.bulbagarden.net/")) return url;
   if (/^https:\/\/tcgplayer-cdn\.tcgplayer\.com\/product\/\d+_in_\d+x\d+\.jpg$/.test(url)) return url;
   return "";
@@ -4566,14 +4588,17 @@ function productHTML(item, family) {
   const bits = [label];
   if (item.set) bits.push(item.set);
   if (day) bits.push(day);
+  const faces = family === "univers" ? universFaces(item) : [];
   const shot = family === "univers"
-    ? universSrc(item).replace("_in_400x400", "_in_1000x1000")
+    ? (faces[0]?.image || universSrc(item)).replace("_in_400x400", "_in_1000x1000")
     : (/^\d+$/.test(String(item.id)) ? boxSrc(item.id, "high") : "");
-  const art = !shot
-    ? `<span class="monogram">${esc(initials(item.name))}</span>`
-    : family === "sealed"
-      ? `<img src="${esc(shot)}" data-fallbacks="${esc(boxFallbacks(item.id, ["low", "200w"]))}" alt="${esc(item.name)}">`
-      : `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}">`;
+  const art = faces.length >= 2
+    ? faces.map((face) => `<img class="shot" src="${esc(face.image)}" alt="${esc(face.name)}" decoding="async" referrerpolicy="no-referrer">`).join("")
+    : !shot
+      ? `<span class="monogram">${esc(initials(item.name))}</span>`
+      : family === "sealed"
+        ? `<img src="${esc(shot)}" data-fallbacks="${esc(boxFallbacks(item.id, ["low", "200w"]))}" alt="${esc(item.name)}">`
+        : `<img class="shot" src="${esc(shot)}" alt="${esc(item.name)}" decoding="async" referrerpolicy="no-referrer">`;
   const asOf = family === "univers" ? state.universAsOf : state.sealedAsOf;
   const when = typeof item.usd === "number" ? formatDay(asOf ? `${asOf}T12:00:00` : "") : "";
   const montant = family === "univers" ? universMontant(item) : (typeof item.usd === "number" ? item.usd : null);
@@ -4599,7 +4624,7 @@ function productHTML(item, family) {
     <article class="fiche">
       ${ficheBar()}
       <div class="fiche-art">
-        <div class="stage is-box" data-label="${esc(initials(item.name))}">${art}</div>
+        <div class="stage is-box${faces.length >= 2 ? " is-pair" : ""}" data-label="${esc(initials(item.name))}">${art}</div>
       </div>
       <div class="fiche-body">
         <p class="kicker">${esc(bits.join(" · "))}</p>
@@ -4758,7 +4783,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=76", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=77", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
