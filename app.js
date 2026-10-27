@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=77";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=78";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -196,8 +196,10 @@ const state = {
   universError: "",
   universKind: "tous",
   universSort: "ancien",
+  universConsole: "",
   universQuery: "",
   universPage: 1,
+  searchGames: [],
   photos: loadPhotos(),
   photoBusy: "",
   photoNote: "",
@@ -509,7 +511,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=77", location.href));
+    const response = await fetch(new URL("visuels.json?v=78", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -1064,7 +1066,7 @@ function headHTML() {
     return `
       <header class="section-head">
         <div>
-          <p class="kicker">Toutes les cartes</p>
+          <p class="kicker">Cartes et jeux</p>
           <h2>Résultats pour « ${esc(state.query)} »</h2>
         </div>
         <p class="lede" id="grille-status">Lecture du catalogue…</p>
@@ -1072,14 +1074,17 @@ function headHTML() {
       <p class="note" id="hydrate-note"></p>`;
   }
   if (state.view === "search") {
+    const jeux = (state.searchGames || []).length;
+    const jeuMot = jeux > 1 ? "jeux" : "jeu";
+    const jeuBit = jeux ? `${jeux} ${jeuMot}. ` : "";
     if (!state.searchTotal) {
       return `
         <header class="section-head">
           <div>
-            <p class="kicker">Toutes les cartes</p>
+            <p class="kicker">Cartes et jeux</p>
             <h2>Résultats pour « ${esc(state.query)} »</h2>
           </div>
-          <p class="lede" id="grille-status">Aucune carte ne porte ce nom.</p>
+          <p class="lede" id="grille-status">${jeuBit}Aucune carte ne porte ce nom.</p>
         </header>
         <p class="note" id="hydrate-note"></p>`;
     }
@@ -1091,10 +1096,10 @@ function headHTML() {
     return `
       <header class="section-head">
         <div>
-          <p class="kicker">Toutes les cartes</p>
+          <p class="kicker">Cartes et jeux</p>
           <h2>Résultats pour « ${esc(state.query)} »</h2>
         </div>
-        <p class="lede" id="grille-status">${shown} ${mot} sur ${state.searchTotal}.${extra}</p>
+        <p class="lede" id="grille-status">${jeuBit}${shown} ${mot} sur ${state.searchTotal}.${extra}</p>
       </header>
       <p class="note" id="hydrate-note"></p>`;
   }
@@ -1163,7 +1168,8 @@ function renderGrid() {
   }
   const shown = shownCards();
   if (!shown.length) {
-    grille.innerHTML = `<p class="empty">Aucune carte ne correspond.</p>`;
+    const jeux = state.view === "search" && (state.searchGames || []).length;
+    grille.innerHTML = jeux ? "" : `<p class="empty">Aucune carte ne correspond.</p>`;
     if (foot) foot.innerHTML = "";
     watchMore();
     return;
@@ -1180,6 +1186,7 @@ function galleryHTML() {
     ${state.view === "set" ? heroHTML() : ""}
     ${toolbarHTML()}
     ${headHTML()}
+    ${rechercheJeuxHTML()}
     <div id="grille"></div>
     <div id="grille-foot"></div>`;
 }
@@ -1942,11 +1949,47 @@ function releasedLabel(value) {
   return formatDay(`${value}T12:00:00`);
 }
 
+function consolesDe(item) {
+  return String(item?.set || "").split(",").map((part) => part.trim()).filter(Boolean);
+}
+
+function ordreConsoles() {
+  const first = new Map();
+  (state.univers || []).forEach((item) => {
+    if (item.kind !== "jeu") return;
+    const rel = item.released || "9999";
+    consolesDe(item).forEach((name) => {
+      const prev = first.get(name);
+      if (!prev || rel < prev) first.set(name, rel);
+    });
+  });
+  return [...first.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0], "fr"))
+    .map(([name]) => name);
+}
+
+function rangConsole(item) {
+  if (item?.kind !== "jeu") return 1000;
+  const ordre = ordreConsoles();
+  const indexes = consolesDe(item).map((name) => ordre.indexOf(name)).filter((index) => index >= 0);
+  return indexes.length ? Math.min(...indexes) : 999;
+}
+
 function universRows() {
-  const q = state.universQuery.trim().toLowerCase();
+  const q = normPhoto(state.universQuery);
+  const tokens = q.split(" ").filter(Boolean);
   let rows = Array.isArray(state.univers) ? state.univers : [];
   if (state.universKind !== "tous") rows = rows.filter((item) => item.kind === state.universKind);
-  if (q) rows = rows.filter((item) => `${item.name} ${item.set}`.toLowerCase().includes(q));
+  if (state.universConsole && (state.universKind === "tous" || state.universKind === "jeu")) {
+    rows = rows.filter((item) => item.kind === "jeu" && consolesDe(item).includes(state.universConsole));
+  }
+  if (tokens.length) {
+    rows = rows.filter((item) => {
+      const faces = Array.isArray(item.faces) ? item.faces.map((face) => face.name).join(" ") : "";
+      const blob = normPhoto(`${item.name} ${item.set} ${faces}`);
+      return tokens.every((token) => blob.includes(token));
+    });
+  }
   const copy = rows.slice();
   const key = (item) => item.released || "9999";
   if (state.universSort === "nom") copy.sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -1958,8 +2001,22 @@ function universRows() {
     copy.sort((a, b) => montant(b) - montant(a) || a.name.localeCompare(b.name, "fr"));
   }
   else if (state.universSort === "recent") copy.sort((a, b) => key(b).localeCompare(key(a)) || a.name.localeCompare(b.name, "fr"));
+  else if (state.universSort === "console") copy.sort((a, b) => rangConsole(a) - rangConsole(b) || key(a).localeCompare(key(b)) || a.name.localeCompare(b.name, "fr"));
   else copy.sort((a, b) => key(a).localeCompare(key(b)) || a.name.localeCompare(b.name, "fr"));
   return copy;
+}
+
+function jeuxCorrespondants(query) {
+  const tokens = normPhoto(query).split(" ").filter(Boolean);
+  if (tokens.length === 0) return [];
+  return (state.univers || [])
+    .filter((item) => item.kind === "jeu")
+    .filter((item) => {
+      const faces = Array.isArray(item.faces) ? item.faces.map((face) => face.name).join(" ") : "";
+      const blob = normPhoto(`${item.name} ${item.set} ${faces}`);
+      return tokens.every((token) => blob.includes(token));
+    })
+    .sort((a, b) => (a.released || "9999").localeCompare(b.released || "9999") || a.name.localeCompare(b.name, "fr"));
 }
 
 function universStatus() {
@@ -2225,25 +2282,42 @@ function universFace(item) {
   return `<span class="art is-box${pair}" data-label="${mark}">${imgs}</span>`;
 }
 
+function universTile(item) {
+  const bits = [universLabel(item.kind)];
+  if (item.set) bits.push(item.set);
+  const day = releasedLabel(item.released);
+  if (day) bits.push(day);
+  return `
+    <article class="tile univers-tile">
+      ${universFace(item)}
+      <button class="tile-hit" type="button" data-action="product" data-family="univers" data-id="${esc(item.id)}">
+        <span class="tile-name">${esc(item.name)}</span>
+        <span class="tile-meta">${esc(bits.join(" · "))}</span>
+        <span class="price-line">${universPrixHTML(item)}</span>
+      </button>
+    </article>`;
+}
+
 function universTiles() {
   const rows = universRows().slice(0, state.universPage * PAGE_SIZE);
   if (!rows.length) return `<p class="note">Aucun résultat pour ce filtre.</p>`;
-  return rows.map((item) => {
-    const bits = [universLabel(item.kind)];
-    if (item.set) bits.push(item.set);
-    const day = releasedLabel(item.released);
-    if (day) bits.push(day);
-    const price = universPrixHTML(item);
-    return `
-      <article class="tile univers-tile">
-        ${universFace(item)}
-        <button class="tile-hit" type="button" data-action="product" data-family="univers" data-id="${esc(item.id)}">
-          <span class="tile-name">${esc(item.name)}</span>
-          <span class="tile-meta">${esc(bits.join(" · "))}</span>
-          <span class="price-line">${price}</span>
-        </button>
-      </article>`;
-  }).join("");
+  return rows.map((item) => universTile(item)).join("");
+}
+
+function rechercheJeuxHTML() {
+  if (state.view !== "search") return "";
+  const rows = state.searchGames || [];
+  if (!rows.length) return "";
+  const shown = rows.slice(0, 8);
+  const reste = rows.length > shown.length
+    ? `<p class="note"><button class="btn" type="button" data-action="jeux-recherche">Voir les ${rows.length} jeux</button></p>`
+    : "";
+  return `
+    <section class="search-jeux">
+      <p class="kicker">Jeux</p>
+      <div class="grid">${shown.map((item) => universTile(item)).join("")}</div>
+      ${reste}
+    </section>`;
 }
 
 function universMore() {
@@ -2305,9 +2379,15 @@ function universHTML() {
         <div class="sealed-tools">
           <label class="sr-only" for="univers-q">Filtrer l'univers</label>
           <input id="univers-q" type="search" placeholder="Nom d'un jeu ou d'un jouet" value="${esc(state.universQuery)}" autocomplete="off" enterkeyhint="search">
+          <label class="sr-only" for="univers-console">Console</label>
+          <select id="univers-console" aria-label="Console">
+            <option value="">Toutes les consoles</option>
+            ${ordreConsoles().map((name) => `<option value="${esc(name)}"${state.universConsole === name ? " selected" : ""}>${esc(name)}</option>`).join("")}
+          </select>
           <label class="sr-only" for="univers-sort">Tri</label>
           <select id="univers-sort" aria-label="Tri">
-            <option value="ancien"${state.universSort === "ancien" ? " selected" : ""}>Plus anciens</option>
+            <option value="ancien"${state.universSort === "ancien" ? " selected" : ""}>Ordre de sortie</option>
+            <option value="console"${state.universSort === "console" ? " selected" : ""}>Console</option>
             <option value="recent"${state.universSort === "recent" ? " selected" : ""}>Plus récents</option>
             <option value="cote"${state.universSort === "cote" ? " selected" : ""}>Cote</option>
             <option value="nom"${state.universSort === "nom" ? " selected" : ""}>Nom</option>
@@ -2329,7 +2409,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=77", location.href));
+      const response = await fetch(new URL("univers.json?v=78", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -4238,6 +4318,7 @@ async function runSearch(raw) {
   const clear = document.getElementById("clear-q");
   if (clear) clear.hidden = query.length === 0;
   if (query.length < 2) {
+    state.searchGames = [];
     if (state.view === "search") loadSet(state.gallerySeriesId, state.setId);
     return;
   }
@@ -4248,19 +4329,25 @@ async function runSearch(raw) {
   state.loading = true;
   state.error = "";
   state.searchCards = [];
+  state.searchGames = [];
   state.searchTotal = 0;
   rememberTab("galerie");
   render();
   try {
-    const rows = await cartesParNom(query);
+    const [rows] = await Promise.all([
+      cartesParNom(query),
+      loadUnivers(),
+    ]);
     if (token !== epoch) return;
     state.searchTotal = rows.length;
     state.searchCards = rows;
+    state.searchGames = jeuxCorrespondants(query);
     state.loading = false;
     render();
     hydrateShown(token);
   } catch {
     if (token !== epoch) return;
+    state.searchGames = jeuxCorrespondants(query);
     state.loading = false;
     state.error = "La recherche n'a pas abouti.";
     render();
@@ -4783,7 +4870,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=77", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=78", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5497,6 +5584,12 @@ function bind() {
       state.universPage = 1;
       paintUnivers();
     }
+    if (event.target.id === "univers-console") {
+      state.universConsole = event.target.value;
+      if (state.universConsole) state.universKind = "jeu";
+      state.universPage = 1;
+      render();
+    }
     if (event.target.id === "coll-named") {
       state.collection.named = event.target.checked;
       saveCollection();
@@ -5671,6 +5764,7 @@ function bind() {
     if (universEl) {
       if (universEl.dataset.univers === "kind") {
         state.universKind = universEl.dataset.kind || "tous";
+        if (state.universKind !== "tous" && state.universKind !== "jeu") state.universConsole = "";
         state.universPage = 1;
         render();
       }
@@ -5686,6 +5780,15 @@ function bind() {
       if (action === "retry") {
         if (state.view === "search") runSearch(state.query);
         else loadSet(state.gallerySeriesId, state.setId);
+      }
+      if (action === "jeux-recherche") {
+        state.universQuery = state.query;
+        state.universKind = "jeu";
+        state.universConsole = "";
+        state.universSort = "ancien";
+        state.universPage = 1;
+        rememberTab("univers");
+        render();
       }
       if (action === "quote") quoteSet();
       if (action === "product") {
@@ -6064,6 +6167,7 @@ function applyMarket(lang) {
   state.setCards = [];
   state.setDetail = null;
   state.searchCards = [];
+  state.searchGames = [];
   state.page = 1;
   state.view = "set";
   state.query = "";
