@@ -12,122 +12,6 @@
       "traite": true
     },
     {
-      "id": "20261026-2142-2b7a",
-      "when": "26 oct. 2026 à 21:42",
-      "where": "Onglet galerie · Extension 30th-c · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [],
-      "image": "20261026-2142-2b7a.jpg",
-      "traite": false
-    },
-    {
-      "id": "20261026-2138-kx85",
-      "when": "26 oct. 2026 à 21:38",
-      "where": "Onglet galerie · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [],
-      "image": "20261026-2138-kx85.jpg",
-      "traite": false
-    },
-    {
-      "id": "20261026-2138-7zub",
-      "when": "26 oct. 2026 à 21:38",
-      "where": "Onglet galerie · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [],
-      "image": "20261026-2138-7zub.jpg",
-      "traite": false
-    },
-    {
-      "when": "26 oct. 2026 à 21:33",
-      "where": "Onglet galerie · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [
-        "The operation is insecure.",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0.1 Mobile/15E148 Safari/604.1"
-      ],
-      "image": "",
-      "traite": false,
-      "id": "20261026-2133-ulxb"
-    },
-    {
-      "when": "26 oct. 2026 à 21:33",
-      "where": "Onglet galerie · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [
-        "The operation is insecure.",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0.1 Mobile/15E148 Safari/604.1"
-      ],
-      "image": "",
-      "traite": false,
-      "id": "20261026-2133-8pj2"
-    },
-    {
-      "id": "20261026-2126-j75k",
-      "when": "26 oct. 2026 à 21:26",
-      "where": "Onglet galerie · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [],
-      "image": "",
-      "traite": false
-    },
-    {
-      "id": "20261026-1356-u25u",
-      "when": "26 oct. 2026 à 13:56",
-      "where": "Onglet extensions · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#extensions",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [],
-      "image": "",
-      "traite": false
-    },
-    {
-      "id": "20261026-1356-pnza",
-      "when": "26 oct. 2026 à 13:56",
-      "where": "Onglet galerie · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#galerie",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Test",
-      "errors": [],
-      "image": "",
-      "traite": false
-    },
-    {
-      "id": "20261026-1338-azbm",
-      "when": "26 oct. 2026 à 13:38",
-      "where": "Onglet extensions · Extension me05 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#extensions",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Images manquantes",
-      "errors": [],
-      "image": "",
-      "traite": false
-    },
-    {
-      "id": "20261026-0958-xie6",
-      "when": "26 oct. 2026 à 09:58",
-      "where": "Onglet extensions · Extension me01 · 402 × 874",
-      "url": "https://kevin-reteck.github.io/aureum/#extensions",
-      "qui": "kevincornec.revit@gmail.com",
-      "text": "Images manquantes",
-      "errors": [],
-      "image": "",
-      "traite": false
-    },
-    {
       "id": "20261026-0738-m4s6",
       "when": "26 oct. 2026 à 07:38",
       "where": "Onglet univers · search · Extension me05 · 375 × 812",
@@ -159,39 +43,21 @@
       "errors": [],
       "image": "",
       "traite": true
-    },
-    {
-      "id": "20261025-2012-lo9q",
-      "when": "25 oct. 2026, 20:12",
-      "where": "Onglet galerie · search · Extension me05 · Fiche ecard1-6 · 402 × 874",
-      "url": "http://127.0.0.1:8765/?v=50#galerie",
-      "qui": "kevin@example.com",
-      "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
-      "errors": [],
-      "image": "20261025-2012-lo9q.jpg",
-      "traite": false
-    },
-    {
-      "id": "20261025-2006-h2ab",
-      "when": "25 oct. 2026, 20:06",
-      "where": "Onglet galerie · search · Extension me05 · Fiche ecard1-6 · 402 × 874",
-      "url": "http://127.0.0.1:8765/?v=50#galerie",
-      "qui": "kevin@example.com",
-      "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
-      "errors": [],
-      "image": "",
-      "traite": false
-    },
-    {
-      "id": "20261025-2005-umt7",
-      "when": "25 oct. 2026, 20:05",
-      "where": "Onglet galerie · search · Extension me05 · 402 × 874",
-      "url": "http://127.0.0.1:8765/?v=50#galerie",
-      "qui": "kevin@example.com",
-      "text": "Vérification : la photo doit montrer l'écran, pas un rectangle noir.",
-      "errors": [],
-      "image": "",
-      "traite": false
     }
+  ],
+  "retires": [
+    "20261026-2142-2b7a",
+    "20261026-2138-kx85",
+    "20261026-2138-7zub",
+    "20261026-2133-ulxb",
+    "20261026-2133-8pj2",
+    "20261026-2126-j75k",
+    "20261026-1356-u25u",
+    "20261026-1356-pnza",
+    "20261026-1338-azbm",
+    "20261026-0958-xie6",
+    "20261025-2012-lo9q",
+    "20261025-2006-h2ab",
+    "20261025-2005-umt7"
   ]
 }

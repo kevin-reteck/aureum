@@ -19,3 +19,5 @@ Ouvrir `journal.json`, puis la photo et le texte du même identifiant.
 ## Déjà traité
 
 `Statut : Traité` dans le fichier, ou `"traite": true` dans `journal.json`, veut dire que le correctif est déjà dans le cabinet. On ne le refait pas. Dans l'application, la ligne est barrée et porte la mention Traité. `Statut : Ouvert` est encore à faire.
+
+`retires` dans `journal.json` liste des essais qu'on ne montre plus. Le texte et la photo ont été enlevés. Un téléphone qui a encore l'envoi en local ne le réaffiche pas.

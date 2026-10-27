@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=75";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=76";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -509,7 +509,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=75", location.href));
+    const response = await fetch(new URL("visuels.json?v=76", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -2312,7 +2312,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=75", location.href));
+      const response = await fetch(new URL("univers.json?v=76", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -4758,7 +4758,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=75", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=76", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5081,6 +5081,7 @@ function brouillonSignal(shot) {
 
 const NTFY_TOPIC = "aureum-signalements-k7m3p9";
 let signauxVisibles = [];
+let identifiantsRetires = new Set();
 
 function srcVisuel(report) {
   const local = srcCapture(report?.shot);
@@ -5107,7 +5108,9 @@ function fusionSignaux(listes) {
       traite: Boolean(report.traite || deja.traite),
     });
   });
-  return [...map.values()].sort((a, b) => String(b.id).localeCompare(String(a.id)));
+  return [...map.values()]
+    .filter((report) => !identifiantsRetires.has(report.id))
+    .sort((a, b) => String(b.id).localeCompare(String(a.id)));
 }
 
 async function lireDepot() {
@@ -5115,6 +5118,9 @@ async function lireDepot() {
     const reponse = await fetch(new URL("signalements/journal.json", location.href), { cache: "no-store" });
     if (!reponse.ok) return [];
     const data = await reponse.json();
+    identifiantsRetires = new Set(
+      (Array.isArray(data?.retires) ? data.retires : []).filter((id) => typeof id === "string" && id),
+    );
     return Array.isArray(data?.reports) ? data.reports : [];
   } catch {
     return [];
