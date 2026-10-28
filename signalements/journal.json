@@ -1,6 +1,39 @@
 {
   "reports": [
     {
+      "id": "20261028-2134-873g",
+      "when": "28 oct. 2026 à 21:34",
+      "where": "Onglet collection · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#collection",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Pareil il faudrait les proposer séparer pour les ajouter à la collection",
+      "errors": [],
+      "image": "",
+      "traite": false
+    },
+    {
+      "id": "20261028-2133-55b6",
+      "when": "28 oct. 2026 à 21:33",
+      "where": "Onglet univers · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#univers",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Dans univers, il faudrait ajouter les legos et mega si possible",
+      "errors": [],
+      "image": "",
+      "traite": false
+    },
+    {
+      "id": "20261028-2130-jkoi",
+      "when": "28 oct. 2026 à 21:30",
+      "where": "Onglet univers · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#univers",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Cartaine version ne sont pas séparés et proposé ensemble il serait bien de les proposer à l’unité pour les mettre dans la collection",
+      "errors": [],
+      "image": "",
+      "traite": false
+    },
+    {
       "id": "20261027-2259-r1xm",
       "when": "27 oct. 2026 à 22:59",
       "where": "Onglet univers · Extension me05 · 402 × 874",
@@ -66,20 +99,5 @@
       "image": "",
       "traite": true
     }
-  ],
-  "retires": [
-    "20261026-2142-2b7a",
-    "20261026-2138-kx85",
-    "20261026-2138-7zub",
-    "20261026-2133-ulxb",
-    "20261026-2133-8pj2",
-    "20261026-2126-j75k",
-    "20261026-1356-u25u",
-    "20261026-1356-pnza",
-    "20261026-1338-azbm",
-    "20261026-0958-xie6",
-    "20261025-2012-lo9q",
-    "20261025-2006-h2ab",
-    "20261025-2005-umt7"
   ]
 }
