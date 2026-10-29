@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=78";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=79";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -511,7 +511,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=78", location.href));
+    const response = await fetch(new URL("visuels.json?v=79", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -1978,7 +1978,7 @@ function rangConsole(item) {
 function universRows() {
   const q = normPhoto(state.universQuery);
   const tokens = q.split(" ").filter(Boolean);
-  let rows = Array.isArray(state.univers) ? state.univers : [];
+  let rows = (Array.isArray(state.univers) ? state.univers : []).filter((item) => !item.bundle);
   if (state.universKind !== "tous") rows = rows.filter((item) => item.kind === state.universKind);
   if (state.universConsole && (state.universKind === "tous" || state.universKind === "jeu")) {
     rows = rows.filter((item) => item.kind === "jeu" && consolesDe(item).includes(state.universConsole));
@@ -2010,7 +2010,7 @@ function jeuxCorrespondants(query) {
   const tokens = normPhoto(query).split(" ").filter(Boolean);
   if (tokens.length === 0) return [];
   return (state.univers || [])
-    .filter((item) => item.kind === "jeu")
+    .filter((item) => item.kind === "jeu" && !item.bundle)
     .filter((item) => {
       const faces = Array.isArray(item.faces) ? item.faces.map((face) => face.name).join(" ") : "";
       const blob = normPhoto(`${item.name} ${item.set} ${faces}`);
@@ -2355,11 +2355,12 @@ function universHTML() {
         <p class="note">${note}</p>
       </section>`;
   }
-  const counts = { tous: state.univers.length };
+  const listed = state.univers.filter((item) => !item.bundle);
+  const counts = { tous: listed.length };
   UNIVERS_KINDS.forEach(([id]) => {
     if (id !== "tous") counts[id] = 0;
   });
-  state.univers.forEach((item) => {
+  listed.forEach((item) => {
     if (counts[item.kind] != null) counts[item.kind] += 1;
   });
   const filters = UNIVERS_KINDS.map(([id, label]) => `
@@ -2373,7 +2374,7 @@ function universHTML() {
         </div>
         <p class="lede" id="univers-status">${esc(universStatus())}</p>
       </header>
-      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Les peluches, figurines, jouets, cartes Topps, autocollants et albums Panini sont les grandes séries, pas chaque modèle. La photo vient de Bulbapedia quand la page en a une. Sinon, les initiales restent.</p>
+      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Chaque version d'un jeu est à part, pour entrer seule dans la collection. Les sets LEGO et Mega aussi. Les peluches, les figurines et les cartes Topps restent les grandes séries.</p>
       <div class="sealed-bar">
         <div class="chip-rail"><div class="series-row" role="group" aria-label="Famille">${filters}</div></div>
         <div class="sealed-tools">
@@ -2409,7 +2410,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=78", location.href));
+      const response = await fetch(new URL("univers.json?v=79", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -3386,7 +3387,7 @@ function looseNote(value) {
 }
 
 function imageLocale(url) {
-  return typeof url === "string" && /^jeux\/[a-z0-9-]+\.jpg$/.test(url) ? url : "";
+  return typeof url === "string" && /^(?:jeux|jouets)\/[a-z0-9-]+\.jpg$/.test(url) ? url : "";
 }
 
 function imagePiece(url) {
@@ -4870,7 +4871,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=78", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=79", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
