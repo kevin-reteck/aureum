@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=79";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=80";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -195,6 +195,7 @@ const state = {
   universLoading: false,
   universError: "",
   universKind: "tous",
+  universMarque: "",
   universSort: "ancien",
   universConsole: "",
   universQuery: "",
@@ -511,7 +512,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=79", location.href));
+    const response = await fetch(new URL("visuels.json?v=80", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -1975,11 +1976,20 @@ function rangConsole(item) {
   return indexes.length ? Math.min(...indexes) : 999;
 }
 
+function marqueDe(item) {
+  if (item?.kind !== "jouet") return "";
+  const set = String(item.set || "");
+  if (set.startsWith("LEGO")) return "lego";
+  if (set === "Mega Construx") return "mega";
+  return "";
+}
+
 function universRows() {
   const q = normPhoto(state.universQuery);
   const tokens = q.split(" ").filter(Boolean);
   let rows = (Array.isArray(state.univers) ? state.univers : []).filter((item) => !item.bundle);
-  if (state.universKind !== "tous") rows = rows.filter((item) => item.kind === state.universKind);
+  if (state.universMarque) rows = rows.filter((item) => marqueDe(item) === state.universMarque);
+  else if (state.universKind !== "tous") rows = rows.filter((item) => item.kind === state.universKind);
   if (state.universConsole && (state.universKind === "tous" || state.universKind === "jeu")) {
     rows = rows.filter((item) => item.kind === "jeu" && consolesDe(item).includes(state.universConsole));
   }
@@ -2363,8 +2373,21 @@ function universHTML() {
   listed.forEach((item) => {
     if (counts[item.kind] != null) counts[item.kind] += 1;
   });
-  const filters = UNIVERS_KINDS.map(([id, label]) => `
-    <button type="button" data-univers="kind" data-kind="${id}" aria-pressed="${state.universKind === id ? "true" : "false"}">${label} ${counts[id]}</button>`).join("");
+  const lego = listed.filter((item) => marqueDe(item) === "lego").length;
+  const mega = listed.filter((item) => marqueDe(item) === "mega").length;
+  const chips = [
+    ["kind", "tous", "Tous", counts.tous],
+    ["marque", "lego", "LEGO", lego],
+    ["marque", "mega", "Mega", mega],
+    ...UNIVERS_KINDS.filter(([id]) => id !== "tous").map(([id, label]) => ["kind", id, label, counts[id]]),
+  ];
+  const filters = chips.map(([mode, id, label, count]) => {
+    const pressed = mode === "marque" ? state.universMarque === id : !state.universMarque && state.universKind === id;
+    const attr = mode === "marque"
+      ? `data-univers="marque" data-marque="${id}"`
+      : `data-univers="kind" data-kind="${id}"`;
+    return `<button type="button" ${attr} aria-pressed="${pressed ? "true" : "false"}">${label} ${count}</button>`;
+  }).join("");
   return `
     <section class="panel" id="univers">
       <header class="section-head">
@@ -2374,7 +2397,7 @@ function universHTML() {
         </div>
         <p class="lede" id="univers-status">${esc(universStatus())}</p>
       </header>
-      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Chaque version d'un jeu est à part, pour entrer seule dans la collection. Les sets LEGO et Mega aussi. Les peluches, les figurines et les cartes Topps restent les grandes séries.</p>
+      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Chaque version d'un jeu est à part, pour entrer seule dans la collection. Les filtres LEGO et Mega sont à côté de Tous. Les peluches, les figurines et les cartes Topps restent les grandes séries.</p>
       <div class="sealed-bar">
         <div class="chip-rail"><div class="series-row" role="group" aria-label="Famille">${filters}</div></div>
         <div class="sealed-tools">
@@ -2410,7 +2433,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=79", location.href));
+      const response = await fetch(new URL("univers.json?v=80", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -4871,7 +4894,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=79", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=80", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5587,7 +5610,10 @@ function bind() {
     }
     if (event.target.id === "univers-console") {
       state.universConsole = event.target.value;
-      if (state.universConsole) state.universKind = "jeu";
+      if (state.universConsole) {
+        state.universKind = "jeu";
+        state.universMarque = "";
+      }
       state.universPage = 1;
       render();
     }
@@ -5765,7 +5791,15 @@ function bind() {
     if (universEl) {
       if (universEl.dataset.univers === "kind") {
         state.universKind = universEl.dataset.kind || "tous";
+        state.universMarque = "";
         if (state.universKind !== "tous" && state.universKind !== "jeu") state.universConsole = "";
+        state.universPage = 1;
+        render();
+      }
+      if (universEl.dataset.univers === "marque") {
+        state.universMarque = universEl.dataset.marque || "";
+        state.universKind = "tous";
+        state.universConsole = "";
         state.universPage = 1;
         render();
       }
@@ -5785,6 +5819,7 @@ function bind() {
       if (action === "jeux-recherche") {
         state.universQuery = state.query;
         state.universKind = "jeu";
+        state.universMarque = "";
         state.universConsole = "";
         state.universSort = "ancien";
         state.universPage = 1;
