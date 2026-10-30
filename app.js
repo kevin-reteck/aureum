@@ -1,8 +1,7 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=80";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=81";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
-const COLL_MAX = 30;
 const NOTE_MAX = 140;
 const POCKETS = 9;
 const PAGE_SIZE = 18;
@@ -512,7 +511,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=80", location.href));
+    const response = await fetch(new URL("visuels.json?v=81", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -2433,7 +2432,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=80", location.href));
+      const response = await fetch(new URL("univers.json?v=81", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -3429,7 +3428,7 @@ function loadCollection() {
       name: looseName(raw.name).trim(),
       named: raw.named !== false,
       shareFavs: raw.shareFavs === true,
-      items: items.filter((item) => item && cleanId(item.id, "") && item.name).slice(0, COLL_MAX).flatMap((item) => {
+      items: items.filter((item) => item && cleanId(item.id, "") && item.name).flatMap((item) => {
         const sealed = boxKind(item.box);
         const univers = universKind(item.box);
         if (item.box && !sealed && !univers) return [];
@@ -3505,7 +3504,7 @@ function collectionFromBox(item, note = "") {
 
 function addToCollection(card) {
   const lang = card?.lang || state.market;
-  if (!card?.id || inCollection(card.id, lang) || state.collection.items.length >= COLL_MAX) return;
+  if (!card?.id || inCollection(card.id, lang)) return;
   state.collection.items.unshift(collectionFromCard(card));
   saveCollection();
 }
@@ -3513,7 +3512,7 @@ function addToCollection(card) {
 function addBox(item) {
   const id = String(item?.id ?? "");
   if (!/^\d+$/.test(id) || !boxKind(item?.kind)) return;
-  if (inCollection(id) || state.collection.items.length >= COLL_MAX) return;
+  if (inCollection(id)) return;
   state.collection.items.unshift(collectionFromBox(item));
   saveCollection();
 }
@@ -3539,7 +3538,7 @@ function collectionFromUnivers(item, note = "") {
 function addUnivers(item) {
   const id = cleanId(String(item?.id ?? ""), "");
   if (!id || !universKind(item?.kind)) return;
-  if (inCollection(id) || state.collection.items.length >= COLL_MAX) return;
+  if (inCollection(id)) return;
   state.collection.items.unshift(collectionFromUnivers({ ...item, id }));
   saveCollection();
 }
@@ -3605,7 +3604,8 @@ async function encodeShare(payload) {
 
 function sanitizeRows(rows, withNote) {
   if (!Array.isArray(rows)) return [];
-  return rows.slice(0, COLL_MAX).flatMap((row) => {
+  // Le lien tient dans une adresse. Au-delà, le message est gonflé.
+  return rows.slice(0, 400).flatMap((row) => {
     const id = cleanId(row?.i, "");
     const name = looseNote(row?.a).trim();
     if (!id || !name) return [];
@@ -3965,7 +3965,7 @@ function collectionHTML() {
         <button class="btn solid" type="button" data-action="coll-share">Copier le lien</button>
         <p class="note" id="coll-status">${esc(state.shareNote)}</p>
       </form>
-      <p class="note">${mine.items.length} sur ${COLL_MAX}. Le commentaire parle de l'état, d'un souvenir ou de l'emplacement.</p>
+      <p class="note">${mine.items.length > 1 ? `${mine.items.length} pièces` : mine.items.length === 1 ? "1 pièce" : "Aucune pièce"}. Le commentaire parle de l'état, d'un souvenir ou de l'emplacement.</p>
       ${empty}
       <div class="coll-list">${mine.items.map((card) => collCard(card, true)).join("")}</div>
     </section>`;
@@ -4680,7 +4680,7 @@ function ficheHTML(card) {
         ${Array.isArray(card.dexId) && card.dexId.length ? `<p class="hint">Pokédex n° ${esc(card.dexId.join(", "))}</p>` : ""}
         <div class="fiche-actions">
           <button class="btn solid" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
-          <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}" ${!collOn && state.collection.items.length >= COLL_MAX ? "disabled" : ""}>${collOn ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection"}</button>
+          <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${collOn ? "Retirer de ma collection" : "Ajouter à ma collection"}</button>
         </div>
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
       </div>
@@ -4722,9 +4722,8 @@ function productHTML(item, family) {
     : (typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : "");
   const cherche = state.photoBusy === String(item.id);
   const deja = inCollection(String(item.id));
-  const plein = !deja && state.collection.items.length >= COLL_MAX;
-  const collLabel = deja ? "Retirer de ma collection" : plein ? "Collection pleine" : "Ajouter à ma collection";
-  const collBtn = `<button class="btn" type="button" data-action="coll-add" data-family="${family}" data-id="${esc(item.id)}" ${plein ? "disabled" : ""}>${collLabel}</button>`;
+  const collLabel = deja ? "Retirer de ma collection" : "Ajouter à ma collection";
+  const collBtn = `<button class="btn" type="button" data-action="coll-add" data-family="${family}" data-id="${esc(item.id)}">${collLabel}</button>`;
   const photoBtn = family === "univers" ? `
         <div class="fiche-actions">
           <button class="btn" type="button" data-action="autre-photo" data-id="${esc(item.id)}" ${cherche ? "disabled" : ""}>${cherche ? "Recherche…" : (shot ? "Autre photo" : "Chercher une photo")}</button>
@@ -4894,7 +4893,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=80", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=81", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5878,8 +5877,8 @@ function bind() {
       if (action === "coll-add") {
         const finish = (id, lang) => {
           const on = inCollection(id, lang);
-          actionEl.textContent = on ? "Retirer de ma collection" : state.collection.items.length >= COLL_MAX ? "Collection pleine" : "Ajouter à ma collection";
-          actionEl.disabled = !on && state.collection.items.length >= COLL_MAX;
+          actionEl.textContent = on ? "Retirer de ma collection" : "Ajouter à ma collection";
+          actionEl.disabled = false;
           if (state.tab === "collection" && !state.visit) render();
         };
         if (actionEl.dataset.family === "sealed" || actionEl.dataset.family === "univers") {
