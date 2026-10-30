@@ -1,7 +1,16 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=81";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=82";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
+const MUSEE = ["galerie", "extensions", "etb", "univers", "cotes"];
+const MUSEE_SALLES = [
+  ["galerie", "Galerie"],
+  ["extensions", "Extensions"],
+  ["etb", "ETB"],
+  ["univers", "Univers"],
+  ["cotes", "Cotes"],
+];
+const HONOR_MAX = 6;
 const NOTE_MAX = 140;
 const POCKETS = 9;
 const PAGE_SIZE = 18;
@@ -144,7 +153,10 @@ const UNIVERS_KINDS = [
 ];
 
 const state = {
-  tab: "galerie",
+  tab: "collection",
+  galerieFiltre: "toutes",
+  museeSalle: "galerie",
+  fraisId: "",
   view: "set",
   series: [],
   gallerySeriesId: "me",
@@ -511,7 +523,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=81", location.href));
+    const response = await fetch(new URL("visuels.json?v=82", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -713,7 +725,15 @@ function resolveCard(card) {
 }
 
 function sortedActive() {
-  const copy = activeCards().map(resolveCard);
+  let copy = activeCards().map(resolveCard);
+  if (state.view === "set" && state.galerieFiltre !== "toutes") {
+    copy = copy.filter((card) => {
+      const lang = card.lang || state.market;
+      if (state.galerieFiltre === "cabinet") return possede(card.id, lang);
+      if (state.galerieFiltre === "chasse") return cherchePiece(card.id, lang);
+      return !possede(card.id, lang);
+    });
+  }
   if (state.sort === "nom") {
     copy.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "fr"));
   } else if (state.sort === "cote") {
@@ -872,8 +892,9 @@ function updateFavCount() {
 }
 
 function updateTabs() {
+  const door = MUSEE.includes(state.tab) ? "musee" : state.tab;
   document.querySelectorAll(".tabs [data-tab]").forEach((button) => {
-    button.setAttribute("aria-selected", button.dataset.tab === state.tab ? "true" : "false");
+    button.setAttribute("aria-selected", button.dataset.tab === door ? "true" : "false");
   });
 }
 
@@ -1037,16 +1058,18 @@ function toolbarHTML() {
     <div class="toolbar">
       <div class="controls">
         ${select}
-        ${marketSelects()}
-        <label class="field">Tri
-          <select id="sort-select">
-            <option value="numero"${state.sort === "numero" ? " selected" : ""}>Numéro</option>
-            <option value="nom"${state.sort === "nom" ? " selected" : ""}>Nom</option>
-            <option value="cote"${state.sort === "cote" ? " selected" : ""}>Tendance</option>
-          </select>
-        </label>
+        <div class="tool-more">
+          ${marketSelects()}
+          <label class="field">Tri
+            <select id="sort-select">
+              <option value="numero"${state.sort === "numero" ? " selected" : ""}>Numéro</option>
+              <option value="nom"${state.sort === "nom" ? " selected" : ""}>Nom</option>
+              <option value="cote"${state.sort === "cote" ? " selected" : ""}>Tendance</option>
+            </select>
+          </label>
+          <button class="btn" type="button" data-action="random">Carte au hasard</button>
+        </div>
       </div>
-      <button class="btn" type="button" data-action="random">Carte au hasard</button>
     </div>
     ${priceModeNote() ? `<p class="note">${esc(priceModeNote())}</p>` : ""}
   `;
@@ -1121,17 +1144,71 @@ function headHTML() {
       </div>
       <p class="lede" id="grille-status">${esc(bits.join(" · "))}</p>
     </header>
+    ${progresHTML()}
     ${state.setId === "base1" ? `<p class="note">1re édition : le petit 1 est à gauche du descriptif, sous l'illustration.</p>` : ""}
     ${noteCatalogue()}
     <p class="note" id="hydrate-note"></p>`;
+}
+
+function murActif() {
+  if (state.view !== "set") return false;
+  if (state.galerieFiltre === "manquantes" || state.galerieFiltre === "chasse") return true;
+  return state.setCards.some((card) => possede(card.id, card.lang || state.market));
+}
+
+function statutTuile(id, lang, mur) {
+  if (possede(id, lang)) return "possede";
+  if (cherchePiece(id, lang)) return "cherche";
+  if (mur) return "niche";
+  return "libre";
+}
+
+function poseHTML(id, lang, family) {
+  const on = possede(id, lang);
+  const familyAttr = family ? ` data-family="${family}"` : "";
+  const label = on ? "Retirer du cabinet" : "Je l'ai";
+  return `<button class="slot-pose" type="button" data-action="coll-pose" data-id="${esc(String(id))}" data-lang="${esc(lang || "fr")}"${familyAttr} aria-label="${label}" aria-pressed="${on ? "true" : "false"}"><span aria-hidden="true">${on ? "✓" : "+"}</span></button>`;
+}
+
+function progresHTML() {
+  if (state.view !== "set" || !state.setCards.length) return "";
+  let owned = 0;
+  state.setCards.forEach((card) => {
+    if (possede(card.id, card.lang || state.market)) owned += 1;
+  });
+  const total = state.setCards.length;
+  const pct = Math.max(0, Math.min(100, Math.round((owned / total) * 100)));
+  const filtres = [
+    ["toutes", "Toutes"],
+    ["cabinet", "À moi"],
+    ["manquantes", "Manque"],
+    ["chasse", "Chasse"],
+  ];
+  return `
+    <div class="progres">
+      <p><strong>${owned}</strong> sur ${total}</p>
+      <div class="progres-ligne" role="presentation"><span style="width:${pct}%"></span></div>
+    </div>
+    <div class="filtre-rail" role="group" aria-label="Filtrer l'extension">
+      ${filtres.map(([id, label]) => `<button type="button" data-action="galerie-filtre" data-filtre="${id}" aria-pressed="${state.galerieFiltre === id ? "true" : "false"}">${label}</button>`).join("")}
+    </div>`;
+}
+
+function museeRail() {
+  const salles = MUSEE_SALLES.map(([id, label]) => `
+    <button type="button" data-tab="${id}" aria-pressed="${state.tab === id ? "true" : "false"}">${label}</button>`).join("");
+  return `<div class="salle-rail" role="navigation" aria-label="Salles du musée">${salles}</div>`;
 }
 
 function tileHTML(card, eager = false) {
   const full = resolveCard(card);
   const ready = Boolean(full.pricing) || cache.has(cacheKey(card.id, card.lang || state.market));
   const lang = card.lang || state.market;
+  const statut = statutTuile(card.id, lang, murActif());
+  const frais = state.fraisId && state.fraisId === card.id ? " is-frais" : "";
   return `
-    <article class="tile" data-card="${esc(card.id)}">
+    <article class="tile is-${statut}${frais}" data-card="${esc(card.id)}">
+      ${poseHTML(card.id, lang)}
       <button class="tile-hit" type="button" data-open="${esc(card.id)}" data-lang="${esc(lang)}">
         <span class="art" data-label="${esc(initials(full.name))}">${imgTag(full, "low", eager)}</span>
         <span class="tile-name">${esc(prettyName(full.name || "Carte"))}</span>
@@ -1183,9 +1260,9 @@ function renderGrid() {
 function galleryHTML() {
   return `
     ${state.error ? `<p class="banner" role="alert">${esc(state.error)} <button class="btn" type="button" data-action="retry">Réessayer</button></p>` : ""}
-    ${state.view === "set" ? heroHTML() : ""}
+    ${state.view === "set" ? headHTML() : ""}
     ${toolbarHTML()}
-    ${headHTML()}
+    ${state.view === "set" ? "" : headHTML()}
     ${rechercheJeuxHTML()}
     <div id="grille"></div>
     <div id="grille-foot"></div>`;
@@ -1803,8 +1880,10 @@ function sealedTiles() {
     const day = formatDay(item.released ? `${item.released}T12:00:00` : "");
     if (day) bits.push(day);
     const price = usdHTML(item.usd);
+    const statut = statutTuile(item.id, "fr", false);
     return `
-      <article class="tile">
+      <article class="tile is-${statut}${state.fraisId === String(item.id) ? " is-frais" : ""}">
+        ${poseHTML(item.id, "fr", "sealed")}
         <button class="tile-hit" type="button" data-action="product" data-family="sealed" data-id="${esc(item.id)}">
           <span class="art is-box" data-label="${esc(initials(item.name))}">
             ${boxImg(item, true)}
@@ -2296,8 +2375,10 @@ function universTile(item) {
   if (item.set) bits.push(item.set);
   const day = releasedLabel(item.released);
   if (day) bits.push(day);
+  const statut = statutTuile(item.id, "fr", false);
   return `
-    <article class="tile univers-tile">
+    <article class="tile univers-tile is-${statut}${state.fraisId === String(item.id) ? " is-frais" : ""}">
+      ${poseHTML(item.id, "fr", "univers")}
       ${universFace(item)}
       <button class="tile-hit" type="button" data-action="product" data-family="univers" data-id="${esc(item.id)}">
         <span class="tile-name">${esc(item.name)}</span>
@@ -2432,7 +2513,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=81", location.href));
+      const response = await fetch(new URL("univers.json?v=82", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -2770,6 +2851,7 @@ function reliefHTML(card, mode) {
         <div class="fiche-actions">
           ${suivante}
           ${garder}
+          ${gestesCourts(card.id, lang)}
           <button class="btn" type="button" data-action="open-fiche" data-id="${esc(card.id)}" data-lang="${esc(lang)}">Voir la fiche</button>
         </div>
       </div>
@@ -3452,6 +3534,8 @@ function loadCollection() {
           row.box = piece;
           row.usd = typeof item.usd === "number" && item.usd >= 0 ? item.usd : null;
         }
+        row.want = item.want === true;
+        row.honor = item.honor === true && item.want !== true;
         return [row];
       }),
     };
@@ -3464,19 +3548,34 @@ function saveCollection() {
   noterStockage(ecrireCabinet("collection", state.collection));
 }
 
-function inCollection(id, lang = state.market) {
+function ligneCollection(id, lang = state.market) {
   const key = String(id ?? "");
-  return state.collection.items.some((item) => {
-    if (item.box) return item.id === key;
-    return item.id === key && (item.lang || "fr") === (lang || "fr");
-  });
+  return state.collection.items.find((item) => {
+    if (item.id !== key) return false;
+    if (item.box) return true;
+    return (item.lang || "fr") === (lang || "fr");
+  }) || null;
+}
+
+function possede(id, lang = state.market) {
+  const row = ligneCollection(id, lang);
+  return Boolean(row && !row.want);
+}
+
+function cherchePiece(id, lang = state.market) {
+  const row = ligneCollection(id, lang);
+  return Boolean(row && row.want);
+}
+
+function inCollection(id, lang = state.market) {
+  return Boolean(ligneCollection(id, lang));
 }
 
 function collectionFromCard(card, note = "") {
   return {
     id: card.id,
     name: card.name,
-    image: typeof card.image === "string" ? card.image : "",
+    image: imageDe(card) || (typeof card.image === "string" ? card.image : ""),
     setName: card.set?.name || card.setName || "",
     localId: card.localId || "",
     note: looseNote(note).trim(),
@@ -3502,18 +3601,37 @@ function collectionFromBox(item, note = "") {
   };
 }
 
-function addToCollection(card) {
+function addToCollection(card, want = false) {
   const lang = card?.lang || state.market;
-  if (!card?.id || inCollection(card.id, lang)) return;
-  state.collection.items.unshift(collectionFromCard(card));
+  if (!card?.id) return;
+  const row = ligneCollection(card.id, lang);
+  if (row) {
+    row.want = Boolean(want);
+    if (want) row.honor = false;
+    saveCollection();
+    return;
+  }
+  const item = collectionFromCard(card);
+  item.want = Boolean(want);
+  item.honor = false;
+  state.collection.items.unshift(item);
   saveCollection();
 }
 
-function addBox(item) {
+function addBox(item, want = false) {
   const id = String(item?.id ?? "");
   if (!/^\d+$/.test(id) || !boxKind(item?.kind)) return;
-  if (inCollection(id)) return;
-  state.collection.items.unshift(collectionFromBox(item));
+  const row = ligneCollection(id);
+  if (row) {
+    row.want = Boolean(want);
+    if (want) row.honor = false;
+    saveCollection();
+    return;
+  }
+  const created = collectionFromBox(item);
+  created.want = Boolean(want);
+  created.honor = false;
+  state.collection.items.unshift(created);
   saveCollection();
 }
 
@@ -3535,12 +3653,140 @@ function collectionFromUnivers(item, note = "") {
   };
 }
 
-function addUnivers(item) {
+function addUnivers(item, want = false) {
   const id = cleanId(String(item?.id ?? ""), "");
   if (!id || !universKind(item?.kind)) return;
-  if (inCollection(id)) return;
-  state.collection.items.unshift(collectionFromUnivers({ ...item, id }));
+  const row = ligneCollection(id);
+  if (row) {
+    row.want = Boolean(want);
+    if (want) row.honor = false;
+    saveCollection();
+    return;
+  }
+  const created = collectionFromUnivers({ ...item, id });
+  created.want = Boolean(want);
+  created.honor = false;
+  state.collection.items.unshift(created);
   saveCollection();
+}
+
+function basculerHonneur(id, lang) {
+  const row = ligneCollection(id, lang);
+  if (!row || row.want) return;
+  if (row.honor) {
+    row.honor = false;
+    saveCollection();
+    return;
+  }
+  const autres = state.collection.items.filter((item) => item !== row && item.honor && !item.want);
+  while (autres.length >= HONOR_MAX) {
+    const vieux = autres.pop();
+    if (vieux) vieux.honor = false;
+  }
+  row.honor = true;
+  saveCollection();
+}
+
+function gesteCollection(mode, id, lang, family) {
+  const row = ligneCollection(id, lang);
+  if (mode === "honneur") {
+    basculerHonneur(id, lang);
+    return Promise.resolve();
+  }
+  const want = mode === "cherche";
+  if (row && ((want && row.want) || (!want && !row.want))) {
+    removeFromCollection(id, lang);
+    return Promise.resolve();
+  }
+  const fini = () => {
+    if (mode === "pose" && possede(id, lang)) state.fraisId = String(id);
+  };
+  if (family === "univers" || family === "sealed") {
+    const apply = (item) => {
+      if (!item && !row) return;
+      if (family === "univers") addUnivers(item || { id, kind: row?.box }, want);
+      else addBox(item || { id, kind: row?.box }, want);
+      fini();
+    };
+    const list = family === "univers" ? state.univers : state.sealed;
+    const item = (list || []).find((entry) => String(entry.id) === String(id));
+    if (item || row || family === "sealed") {
+      apply(item);
+      return Promise.resolve();
+    }
+    return loadUnivers().then(() => {
+      apply((state.univers || []).find((entry) => String(entry.id) === String(id)));
+    });
+  }
+  const known = cache.get(cacheKey(id, lang))
+    || state.setCards.find((card) => card.id === id)
+    || state.searchCards.find((card) => card.id === id);
+  if (known?.name) {
+    addToCollection(known, want);
+    fini();
+    return Promise.resolve();
+  }
+  return getCard(id, lang).then((card) => {
+    addToCollection(card, want);
+    fini();
+  }).catch(() => {});
+}
+
+function rafraichirApresGeste() {
+  const y = window.scrollY;
+  const relief = document.getElementById("relief");
+  if (relief?.open && relief.dataset.card) {
+    const lang = relief.dataset.lang || state.market;
+    const card = cache.get(cacheKey(relief.dataset.card, lang)) || carteConnue(relief.dataset.card, lang);
+    if (card?.name) relief.innerHTML = reliefHTML({ ...card, id: relief.dataset.card, lang: card.lang || lang }, relief.dataset.mode === "random" ? "random" : "");
+  }
+  const dialog = document.getElementById("fiche");
+  if (productOpen && dialog?.open) paintOpenProduct();
+  else if (dialog?.open && dialog.dataset.current && !dialog.querySelector(".pending")) {
+    const lang = dialog.dataset.lang || state.market;
+    const card = cache.get(cacheKey(dialog.dataset.current, lang));
+    if (card) dialog.innerHTML = ficheHTML(card);
+  }
+  if (state.visit) {
+    window.scrollTo(0, y);
+    return;
+  }
+  if (state.tab === "etb" && document.getElementById("sealed-grid")) paintSealed();
+  else if (state.tab === "univers" && document.getElementById("univers-grid")) paintUnivers();
+  else render();
+  state.fraisId = "";
+  window.scrollTo(0, y);
+}
+
+function gestesCourts(id, lang) {
+  const row = ligneCollection(id, lang);
+  const on = Boolean(row && !row.want);
+  const want = Boolean(row && row.want);
+  const commun = `data-id="${esc(id)}" data-lang="${esc(lang || "fr")}"`;
+  return `
+      <button class="btn solid" type="button" data-action="coll-pose" ${commun}>${on ? "Retirer du cabinet" : "Je l'ai"}</button>
+      <button class="btn" type="button" data-action="coll-cherche" ${commun}>${want ? "Ne plus chercher" : "Je la cherche"}</button>
+      ${on ? `<button class="btn" type="button" data-action="coll-honneur" ${commun}>${row.honor ? "Retirer du présentoir" : "À l'honneur"}</button>` : ""}`;
+}
+
+function gestesHTML(id, lang, family) {
+  const row = ligneCollection(id, lang);
+  const on = Boolean(row && !row.want);
+  const want = Boolean(row && row.want);
+  const familyAttr = family ? ` data-family="${esc(family)}"` : "";
+  const commun = `data-id="${esc(id)}" data-lang="${esc(lang || "fr")}"${familyAttr}`;
+  const classeur = family ? "" : `<button class="btn" type="button" data-action="binder-add" data-id="${esc(id)}" data-lang="${esc(lang || state.market)}">${binderFind(id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>`;
+  const note = row ? `<label class="coll-label">Commentaire
+        <textarea data-coll-note="${esc(id)}" data-lang="${esc(lang || "fr")}" maxlength="${NOTE_MAX}" rows="2" placeholder="État, souvenir, emplacement.">${esc(row.note || "")}</textarea>
+      </label>` : "";
+  return `
+    <div class="fiche-actions">
+      ${classeur}
+      <button class="btn solid" type="button" data-action="coll-pose" ${commun}>${on ? "Retirer du cabinet" : "Je l'ai"}</button>
+      <button class="btn" type="button" data-action="coll-cherche" ${commun}>${want ? "Ne plus chercher" : "Je la cherche"}</button>
+      ${on ? `<button class="btn" type="button" data-action="coll-honneur" ${commun}>${row.honor ? "Retirer du présentoir" : "Mettre à l'honneur"}</button>` : ""}
+    </div>
+    ${note}`;
 }
 
 function removeFromCollection(id, lang = state.market) {
@@ -3586,7 +3832,7 @@ function shareRow(item, withNote) {
 
 function sharePayload() {
   const mine = state.collection;
-  const items = mine.items.map((item) => shareRow(item, true));
+  const items = presentoirItems().map((item) => shareRow(item, true));
   if (!items.length) return null;
   return { v: 1, n: mine.named ? looseName(mine.name).trim() : "", items, favs: [] };
 }
@@ -3773,7 +4019,10 @@ function collectionWorth() {
   let boxKnown = 0;
   let pending = 0;
   let missing = 0;
+  let total = 0;
   state.collection.items.forEach((item) => {
+    if (item.want) return;
+    total += 1;
     if (item.box) {
       boxes += 1;
       const euro = boxEuro(item.usd);
@@ -3795,7 +4044,7 @@ function collectionWorth() {
     sum += item.trend;
     known += 1;
   });
-  return { sum, known, total: state.collection.items.length, cards, boxes, boxKnown, pending, missing };
+  return { sum, known, total, cards, boxes, boxKnown, pending, missing };
 }
 
 function worthNote(worth) {
@@ -3823,6 +4072,20 @@ function worthNote(worth) {
   if (pending && !boxKnown) return "Les cartes restent en cotes Cardmarket. La conversion du reste est en cours. Chaque pièce compte une fois. Pas un prix de vente.";
   if (anyUsd && !boxKnown) return "Les cartes restent en cotes Cardmarket. La conversion du reste est indisponible. Chaque pièce compte une fois. Pas un prix de vente.";
   return "Les cartes restent en cotes Cardmarket. Le reste est converti depuis les dollars. Chaque pièce compte une fois. Pas un prix de vente.";
+}
+
+function worthCourt() {
+  const worth = collectionWorth();
+  if (!worth.total) return "";
+  if (!worth.known) return worthHTML();
+  const hole = worth.missing ? `<span class="deal-note">${worth.missing} ${worth.missing > 1 ? "pièces" : "pièce"} sans cote.</span>` : "";
+  return `
+    <p class="coll-worth" id="coll-worth">
+      <span class="kicker">Valeur indicative</span>
+      <strong class="price">${esc(eur(worth.sum))}</strong>
+      <span class="deal-note">Pas un prix de vente.</span>
+      ${hole}
+    </p>`;
 }
 
 function worthHTML() {
@@ -3860,7 +4123,7 @@ function paintCollectionPrices() {
   if (state.tab !== "collection") return;
   if (!state.visit) {
     const slot = document.getElementById("coll-worth");
-    const html = worthHTML();
+    const html = worthCourt();
     if (slot) slot.outerHTML = html || "";
     else if (html) document.getElementById("coll-form")?.insertAdjacentHTML("beforebegin", html);
   }
@@ -3941,33 +4204,100 @@ async function refreshCollection() {
   paintCollectionPrices();
 }
 
+function familleDe(item) {
+  if (!item?.box) return "cartes";
+  if (item.box === "jeu") return "jeux";
+  if (item.box === "etb" || item.box === "upc" || item.box === "coffret") return "scelles";
+  if (item.box === "jouet" || item.box === "peluche" || item.box === "figurine") return "jouets";
+  return "reste";
+}
+
+function presentoirItems() {
+  const owned = state.collection.items.filter((item) => !item.want);
+  const honors = owned.filter((item) => item.honor);
+  return (honors.length ? honors : owned.slice(0, 4)).slice(0, HONOR_MAX);
+}
+
+function pieceBouton(item) {
+  const family = item.box ? (universKind(item.box) ? "univers" : "sealed") : "";
+  const open = item.box
+    ? `data-action="product" data-family="${family}" data-id="${esc(item.id)}"`
+    : `data-open="${esc(item.id)}" data-lang="${esc(item.lang || "fr")}"`;
+  const nom = item.box ? item.name : prettyName(item.name);
+  let art = `<span class="monogram">${esc(initials(item.name))}</span>`;
+  let src = item.image || "";
+  if (!item.box && src.startsWith("https://assets.tcgdex.net/") && !/\/(?:low|high)\.(?:webp|png)$/.test(src)) src = `${src}/low.webp`;
+  if (src) {
+    const shot = universKind(item.box) ? ` class="shot" referrerpolicy="no-referrer"` : "";
+    art = `<img${shot} src="${esc(src)}" alt="" decoding="async">`;
+  }
+  return `
+    <button class="piece" type="button" ${open} aria-label="${esc(nom)}">
+      <span class="piece-art">${art}</span>
+      <span class="piece-nom">${esc(nom)}</span>
+    </button>`;
+}
+
+function etageresHTML(owned) {
+  const groupes = [
+    ["cartes", "Cartes"],
+    ["jeux", "Jeux"],
+    ["jouets", "Jouets"],
+    ["scelles", "Scellés"],
+    ["reste", "Autres"],
+  ];
+  return groupes.map(([id, label]) => {
+    const rows = owned.filter((item) => familleDe(item) === id);
+    if (!rows.length) return "";
+    return `
+      <h3 class="etagere-titre">${label}</h3>
+      <div class="etagere">${rows.map((item) => pieceBouton(item)).join("")}</div>`;
+  }).join("");
+}
+
 function collectionHTML() {
   if (state.visit) return visitHTML();
   const mine = state.collection;
-  const empty = mine.items.length
-    ? ""
-    : `<div class="empty-state"><p class="lede">Rien pour l'instant. Depuis une fiche, ajoute une carte, un jeu, une peluche ou un coffret.</p></div>`;
+  const owned = mine.items.filter((item) => !item.want);
+  const wants = mine.items.filter((item) => item.want);
+  const comptes = { cartes: 0, jeux: 0, jouets: 0, scelles: 0, reste: 0 };
+  owned.forEach((item) => { comptes[familleDe(item)] += 1; });
+  const noms = [
+    ["cartes", "Cartes", comptes.cartes],
+    ["jeux", "Jeux", comptes.jeux],
+    ["jouets", "Jouets", comptes.jouets],
+    ["scelles", "Scellés", comptes.scelles],
+  ];
+  if (comptes.reste) noms.push(["reste", "Autres", comptes.reste]);
+  if (wants.length) noms.push(["chasse", "En chasse", wants.length]);
+  const vide = !owned.length && !wants.length;
+  const auto = !owned.some((item) => item.honor);
+  const vitrine = presentoirItems();
+  const chasse = wants.length
+    ? `<h3 class="etagere-titre">Je les cherche</h3><div class="chasse">${wants.map((item) => pieceBouton(item)).join("")}</div>`
+    : "";
+  const corps = vide
+    ? `
+      <div class="niches" aria-hidden="true"><span class="niche"></span><span class="niche"></span><span class="niche"></span><span class="niche"></span></div>
+      <p class="lede">Quatre places libres. Le musée est à côté : une carte, un jeu, une peluche, un coffret.</p>
+      <button class="btn solid" type="button" data-tab="musee">Entrer dans le musée</button>`
+    : `
+      <div class="comptes">${noms.map(([, label, count]) => `<p><strong>${count}</strong><span>${label}</span></p>`).join("")}</div>
+      ${worthCourt()}
+      ${vitrine.length ? `<h3 class="etagere-titre">${auto ? "Dernières pièces" : "À l'honneur"}</h3><div class="presentoir">${vitrine.map((item) => pieceBouton(item)).join("")}</div>` : ""}
+      ${chasse}
+      ${etageresHTML(owned.filter((item) => !vitrine.includes(item)))}`;
   return `
-    <section class="panel">
-      <header class="section-head">
-        <div>
-          <p class="kicker">Collection</p>
-          <h2>Ma collection</h2>
-        </div>
-        <p class="lede">Tes cartes, tes jeux, tes peluches et tes coffrets. Un commentaire, une cote en euros. Tout reste dans ton compte, sur cet appareil. Le lien montre la page, il ne vend rien.</p>
-      </header>
-      ${worthHTML()}
-      <form class="coll-form" id="coll-form">
-        <label class="coll-label" for="coll-name">Ton nom
-          <input id="coll-name" type="text" maxlength="24" value="${esc(mine.name)}" placeholder="Un prénom suffit" autocomplete="nickname">
-        </label>
+    <section class="cabinet">
+      <p class="kicker">Cabinet</p>
+      <input id="coll-name" class="cabinet-nom" type="text" maxlength="24" value="${esc(mine.name)}" placeholder="Ma collection" aria-label="Nom de la collection" autocomplete="nickname">
+      ${corps}
+      <form class="cabinet-partage" id="coll-form">
         <label class="coll-check"><input id="coll-named" type="checkbox" ${mine.named ? "checked" : ""}> Montrer ce nom dans le lien</label>
-        <button class="btn solid" type="button" data-action="coll-share">Copier le lien</button>
+        <button class="btn" type="button" data-action="coll-share">Partager le présentoir</button>
         <p class="note" id="coll-status">${esc(state.shareNote)}</p>
       </form>
-      <p class="note">${mine.items.length > 1 ? `${mine.items.length} pièces` : mine.items.length === 1 ? "1 pièce" : "Aucune pièce"}. Le commentaire parle de l'état, d'un souvenir ou de l'emplacement.</p>
-      ${empty}
-      <div class="coll-list">${mine.items.map((card) => collCard(card, true)).join("")}</div>
+      <p class="note">Le lien montre le présentoir. Sans pièce à l'honneur, il montre les dernières entrées. Il ne vend rien.</p>
     </section>`;
 }
 
@@ -4070,11 +4400,12 @@ function leaveVisit() {
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
-  if (state.tab === "galerie") app.innerHTML = galleryHTML();
-  else if (state.tab === "extensions") app.innerHTML = extensionsHTML();
-  else if (state.tab === "etb") app.innerHTML = etbHTML();
-  else if (state.tab === "univers") app.innerHTML = universHTML();
-  else if (state.tab === "cotes") app.innerHTML = cotesHTML();
+  const salle = (html) => `${museeRail()}${html}`;
+  if (state.tab === "galerie") app.innerHTML = salle(galleryHTML());
+  else if (state.tab === "extensions") app.innerHTML = salle(extensionsHTML());
+  else if (state.tab === "etb") app.innerHTML = salle(etbHTML());
+  else if (state.tab === "univers") app.innerHTML = salle(universHTML());
+  else if (state.tab === "cotes") app.innerHTML = salle(cotesHTML());
   else if (state.tab === "classeur") {
     app.innerHTML = binderHTML();
     hydrateBinderFoils();
@@ -4192,6 +4523,7 @@ function risePage() {
 
 function setTab(tab) {
   if (tab === "favoris") tab = "classeur";
+  if (tab === "musee") tab = MUSEE.includes(state.museeSalle) ? state.museeSalle : "galerie";
   const relief = document.getElementById("relief");
   if (relief?.open) relief.close();
   const changed = TABS.includes(tab) && tab !== state.tab;
@@ -4203,6 +4535,7 @@ function setTab(tab) {
       history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
   }
+  if (MUSEE.includes(tab)) state.museeSalle = tab;
   if (tab === "cotes" || ((tab === "etb" || tab === "univers") && activeCurrency() !== "USD")) loadFx();
   rememberTab(tab);
   render();
@@ -4648,7 +4981,6 @@ function nextRandomCard() {
 function ficheHTML(card) {
   const types = Array.isArray(card.types) ? card.types : [];
   const when = formatDay(card.pricing?.cardmarket?.updated);
-  const collOn = inCollection(card.id, card.lang || state.market);
   return `
     <article class="fiche">
       ${ficheBar()}
@@ -4678,10 +5010,7 @@ function ficheHTML(card) {
         ${attacksHTML(card)}
         ${card.illustrator ? `<p class="hint">Illustré par ${esc(card.illustrator)}.</p>` : ""}
         ${Array.isArray(card.dexId) && card.dexId.length ? `<p class="hint">Pokédex n° ${esc(card.dexId.join(", "))}</p>` : ""}
-        <div class="fiche-actions">
-          <button class="btn solid" type="button" data-action="binder-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${binderFind(card.id) ? "Voir dans le classeur" : "Ranger dans le classeur"}</button>
-          <button class="btn" type="button" data-action="coll-add" data-id="${esc(card.id)}" data-lang="${esc(card.lang || state.market)}">${collOn ? "Retirer de ma collection" : "Ajouter à ma collection"}</button>
-        </div>
+        ${gestesHTML(card.id, card.lang || state.market)}
         <p class="hint">Cote indicative Cardmarket, pas une offre d'achat.</p>
       </div>
     </article>`;
@@ -4721,15 +5050,13 @@ function productHTML(item, family) {
     ? parts.map((part) => `<p class="cote-price is-part"><span class="price-name">${esc(part.name)}</span> ${esc(usdPlain(part.usd))}</p>`).join("")
     : (typeof montant === "number" ? `<p class="cote-price">${esc(usdPlain(montant))}</p>` : "");
   const cherche = state.photoBusy === String(item.id);
-  const deja = inCollection(String(item.id));
-  const collLabel = deja ? "Retirer de ma collection" : "Ajouter à ma collection";
-  const collBtn = `<button class="btn" type="button" data-action="coll-add" data-family="${family}" data-id="${esc(item.id)}">${collLabel}</button>`;
+  const gestes = gestesHTML(String(item.id), "fr", family);
   const photoBtn = family === "univers" ? `
         <div class="fiche-actions">
           <button class="btn" type="button" data-action="autre-photo" data-id="${esc(item.id)}" ${cherche ? "disabled" : ""}>${cherche ? "Recherche…" : (shot ? "Autre photo" : "Chercher une photo")}</button>
-          ${collBtn}
         </div>
-        ${state.photoNote && productOpen?.id === String(item.id) ? `<p class="note">${esc(state.photoNote)}</p>` : ""}` : `<div class="fiche-actions">${collBtn}</div>`;
+        ${gestes}
+        ${state.photoNote && productOpen?.id === String(item.id) ? `<p class="note">${esc(state.photoNote)}</p>` : ""}` : gestes;
   return `
     <article class="fiche">
       ${ficheBar()}
@@ -4893,7 +5220,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=81", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=82", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
@@ -5874,6 +6201,19 @@ function bind() {
         const lang = actionEl.dataset.lang || state.market;
         leaveRelief(() => openFiche(id, { lang }));
       }
+      if (action === "galerie-filtre") {
+        state.galerieFiltre = actionEl.dataset.filtre || "toutes";
+        const y = window.scrollY;
+        render();
+        window.scrollTo(0, y);
+      }
+      if (action === "coll-pose" || action === "coll-cherche" || action === "coll-honneur") {
+        const id = String(actionEl.dataset.id || "");
+        const lang = actionEl.dataset.lang || state.market;
+        const family = actionEl.dataset.family || "";
+        const mode = action === "coll-honneur" ? "honneur" : action === "coll-cherche" ? "cherche" : "pose";
+        Promise.resolve(gesteCollection(mode, id, lang, family)).then(() => rafraichirApresGeste());
+      }
       if (action === "coll-add") {
         const finish = (id, lang) => {
           const on = inCollection(id, lang);
@@ -6143,7 +6483,9 @@ async function recoverFromMarket(img) {
 function initialTab() {
   const hash = location.hash.replace("#", "");
   if (hash === "favoris") return "classeur";
-  return TABS.includes(hash) ? hash : "galerie";
+  if (hash === "musee") return "galerie";
+  if (!hash) return "collection";
+  return TABS.includes(hash) ? hash : "collection";
 }
 
 function registerServiceWorker() {
@@ -6334,6 +6676,10 @@ function boot() {
     if (hash === "favoris") {
       if (state.tab !== "classeur") setTab("classeur");
       else rememberTab("classeur");
+      return;
+    }
+    if (hash === "musee") {
+      if (!MUSEE.includes(state.tab)) setTab("musee");
       return;
     }
     if (TABS.includes(hash) && hash !== state.tab) setTab(hash);
