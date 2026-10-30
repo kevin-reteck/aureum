@@ -2477,7 +2477,7 @@ function universHTML() {
         </div>
         <p class="lede" id="univers-status">${esc(universStatus())}</p>
       </header>
-      <p class="note">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Chaque version d'un jeu est à part, pour entrer seule dans la collection. Les filtres LEGO et Mega sont à côté de Tous. Les peluches, les figurines et les cartes Topps restent les grandes séries.</p>
+      <p class="note univers-histoire">Pokémon commence le 27 février 1996 au Japon, avec Rouge et Vert. Jaune sort le 12 septembre 1998. Chaque version d'un jeu est à part, pour entrer seule dans la collection. Les filtres LEGO et Mega sont à côté de Tous. Les peluches, les figurines et les cartes Topps restent les grandes séries.</p>
       <div class="sealed-bar">
         <div class="chip-rail"><div class="series-row" role="group" aria-label="Famille">${filters}</div></div>
         <div class="sealed-tools">
