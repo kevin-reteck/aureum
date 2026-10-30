@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=82";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=83";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -523,7 +523,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=82", location.href));
+    const response = await fetch(new URL("visuels.json?v=83", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -2513,7 +2513,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=82", location.href));
+      const response = await fetch(new URL("univers.json?v=83", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -5220,7 +5220,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=82", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=83", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
