@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=83";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=84";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -339,6 +339,13 @@ function deltaInfo(card) {
   return { pct, dir };
 }
 
+function reliefPrix(card) {
+  const prices = card?.pricing?.cardmarket;
+  if (typeof prices?.trend === "number" || typeof prices?.avg === "number") return priceHTML(card);
+  if (typeof card?.trend === "number") return `<span class="price">${esc(eur(card.trend))}</span>`;
+  return `<span class="price-missing">Cote indisponible</span>`;
+}
+
 function priceHTML(card) {
   const prices = card?.pricing?.cardmarket;
   const amount = typeof prices?.trend === "number" ? prices.trend : typeof prices?.avg === "number" ? prices.avg : null;
@@ -495,7 +502,7 @@ function imageDe(card) {
   const local = urlCarte(visuels.cartes?.[card?.id]);
   const remote = typeof card?.image === "string" && card.image.startsWith("https://assets.tcgdex.net/") ? card.image : "";
   if (local && remote.includes("/en/")) return local;
-  return remote || local;
+  return remote || local || urlCarte(card?.image);
 }
 
 function artCandidates(base, size) {
@@ -523,7 +530,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=83", location.href));
+    const response = await fetch(new URL("visuels.json?v=84", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -932,6 +939,20 @@ function patchCard(full) {
   mergeCard(full);
   const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(full.id) : full.id.replace(/"/g, "");
   document.querySelectorAll(`[data-card="${id}"]`).forEach((node) => {
+    if (node.classList.contains("piece")) {
+      const line = node.querySelector(".price-line");
+      const trend = full.pricing?.cardmarket?.trend;
+      if (line && typeof trend === "number") line.innerHTML = `<span class="price">${esc(eur(trend))}</span>`;
+      const art = node.querySelector(".piece-art");
+      if (art && !art.querySelector("img")) {
+        const markup = imgTag(full, "low", false);
+        if (markup.includes("<img")) {
+          art.innerHTML = markup;
+          wakeScans(art);
+        }
+      }
+      return;
+    }
     const slot = node.querySelector("[data-slot='price']");
     if (slot) {
       slot.classList.remove("is-wait");
@@ -2513,7 +2534,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=83", location.href));
+      const response = await fetch(new URL("univers.json?v=84", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -2847,6 +2868,7 @@ function reliefHTML(card, mode) {
       </div>
       <div class="relief-copy">
         <p class="relief-name">${esc(prettyName(card.name))}</p>
+        <p class="relief-prix price-line">${reliefPrix(card)}</p>
         <p class="hint">${foilHint(kind)}</p>
         <div class="fiche-actions">
           ${suivante}
@@ -2870,6 +2892,7 @@ function reliefAttente() {
       </div>
       <div class="relief-copy">
         <p class="relief-name">Ouverture…</p>
+        <p class="relief-prix price-line"><span class="price-missing">Cote indisponible</span></p>
         <p class="hint">Penche la carte : la lumière suit le mouvement.</p>
       </div>
     </div>`;
@@ -3153,6 +3176,8 @@ async function completerRelief(id, lang) {
     applyReliefFoil(dialog, card);
     const name = dialog.querySelector(".relief-name");
     if (name && card.name) name.textContent = prettyName(card.name);
+    const prix = dialog.querySelector(".relief-prix");
+    if (prix) prix.innerHTML = reliefPrix(card);
   } catch {
     if (!dialog?.open || dialog.dataset.card !== id) return;
     const name = dialog.querySelector(".relief-name");
@@ -3523,7 +3548,7 @@ function loadCollection() {
             ? boxShot(item.id)
             : (univers
               ? (imagePiece(item.image) || (/^\d+$/.test(item.id) ? boxShot(item.id) : ""))
-              : (typeof item.image === "string" && item.image.startsWith("https://assets.tcgdex.net/") ? item.image : "")),
+              : urlCarte(item.image)),
           setName: looseNote(item.setName).trim(),
           localId: piece ? "" : looseNote(item.localId).trim().slice(0, 16),
           note: looseNote(item.note).trim(),
@@ -4127,6 +4152,18 @@ function paintCollectionPrices() {
     if (slot) slot.outerHTML = html || "";
     else if (html) document.getElementById("coll-form")?.insertAdjacentHTML("beforebegin", html);
   }
+  document.querySelectorAll(".piece").forEach((node) => {
+    const id = node.dataset.card;
+    if (!id) return;
+    const lang = node.dataset.lang || "fr";
+    const item = state.collection.items.find((row) => {
+      if (row.id !== id) return false;
+      if (node.dataset.box) return row.box === node.dataset.box;
+      return !row.box && (row.lang || "fr") === lang;
+    });
+    const line = node.querySelector(".price-line");
+    if (item && line) line.innerHTML = piecePrix(item);
+  });
   document.querySelectorAll(".coll-card[data-box]").forEach((node) => {
     const item = boxById(node.dataset.card);
     const line = node.querySelector(".price-line");
@@ -4193,7 +4230,8 @@ async function refreshCollection() {
       if (token !== collEpoch || state.visit || state.tab !== "collection") return;
       const trend = full.pricing?.cardmarket?.trend;
       item.trend = typeof trend === "number" ? trend : null;
-      if (typeof full.image === "string") item.image = full.image;
+      const scan = imageDe({ ...full, id: item.id, image: full.image || item.image }) || marketArt(full, "low") || editionArt(full, "low");
+      if (scan) item.image = scan;
       patchCard(full);
     } catch {
       /* La dernière cote connue reste affichée. */
@@ -4218,23 +4256,35 @@ function presentoirItems() {
   return (honors.length ? honors : owned.slice(0, 4)).slice(0, HONOR_MAX);
 }
 
+function piecePrix(item) {
+  if (item.box) return boxPriceHTML(item.usd);
+  if (typeof item.trend === "number") return `<span class="price">${esc(eur(item.trend))}</span>`;
+  return `<span class="price-missing">Cote indisponible</span>`;
+}
+
 function pieceBouton(item) {
   const family = item.box ? (universKind(item.box) ? "univers" : "sealed") : "";
   const open = item.box
     ? `data-action="product" data-family="${family}" data-id="${esc(item.id)}"`
     : `data-open="${esc(item.id)}" data-lang="${esc(item.lang || "fr")}"`;
   const nom = item.box ? item.name : prettyName(item.name);
-  let art = `<span class="monogram">${esc(initials(item.name))}</span>`;
-  let src = item.image || "";
-  if (!item.box && src.startsWith("https://assets.tcgdex.net/") && !/\/(?:low|high)\.(?:webp|png)$/.test(src)) src = `${src}/low.webp`;
-  if (src) {
-    const shot = universKind(item.box) ? ` class="shot" referrerpolicy="no-referrer"` : "";
-    art = `<img${shot} src="${esc(src)}" alt="" decoding="async">`;
+  const mark = esc(initials(item.name));
+  let art = `<span class="monogram">${mark}</span>`;
+  if (item.box) {
+    const src = item.image || "";
+    if (src) {
+      const shot = universKind(item.box) ? ` class="shot" referrerpolicy="no-referrer"` : "";
+      art = `<img${shot} src="${esc(src)}" alt="" decoding="async">`;
+    }
+  } else {
+    art = imgTag({ id: item.id, name: item.name, image: item.image, lang: item.lang || "fr" }, "low", false);
   }
+  const boite = item.box ? ` data-box="${esc(item.box)}"` : "";
   return `
-    <button class="piece" type="button" ${open} aria-label="${esc(nom)}">
-      <span class="piece-art">${art}</span>
+    <button class="piece" type="button" ${open} data-card="${esc(item.id)}" data-lang="${esc(item.lang || "fr")}"${boite} aria-label="${esc(nom)}">
+      <span class="piece-art" data-label="${mark}">${art}</span>
       <span class="piece-nom">${esc(nom)}</span>
+      <span class="price-line">${piecePrix(item)}</span>
     </button>`;
 }
 
@@ -5220,7 +5270,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=83", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=84", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
