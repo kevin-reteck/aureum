@@ -1,6 +1,39 @@
 {
   "reports": [
     {
+      "id": "20261031-0833-w9nf",
+      "when": "31 oct. 2026 à 08:33",
+      "where": "Onglet cotes · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#cotes",
+      "qui": "gossearthur17@gmail.com",
+      "text": "L’onglet côte pourrait être amélioré ce serait bien qu’on y retrouve les éléments les cher du moment tout item confondu",
+      "errors": [],
+      "image": "20261031-0833-w9nf.jpg",
+      "traite": false
+    },
+    {
+      "id": "20261031-0832-3onc",
+      "when": "31 oct. 2026 à 08:32",
+      "where": "Onglet collection · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#collection",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Les cote n’apparaissent plus lorsqu’on sélectionne l’items il faut aller voir la fiche",
+      "errors": [],
+      "image": "20261031-0832-3onc.jpg",
+      "traite": false
+    },
+    {
+      "id": "20261031-0812-7yp0",
+      "when": "31 oct. 2026 à 08:12",
+      "where": "Onglet collection · Extension me05 · 375 × 812",
+      "url": "https://kevin-reteck.github.io/aureum/#collection",
+      "qui": "gossearthur17@gmail.com",
+      "text": "Bug sur la carte magicarp elle ne s’affiche pas",
+      "errors": [],
+      "image": "20261031-0812-7yp0.jpg",
+      "traite": false
+    },
+    {
       "id": "20261030-2032-mj8w",
       "when": "30 oct. 2026 à 20:32",
       "where": "Onglet univers · Extension me05 · 375 × 812",
