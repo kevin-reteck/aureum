@@ -2454,6 +2454,8 @@ html[data-porte="ok"] .skip { display: block !important; }
   }
   .presentoir .piece-nom { order: -1; margin: 0 2px 2px; }
   .presentoir .piece .price-line { order: -1; margin: 0 2px 6px; }
+  .fiche-art .stage { max-width: 220px; }
+  .duo { margin-top: 8px; }
   #univers { display: flex; flex-direction: column; }
   #univers > .sealed-bar { order: 1; }
   #univers > .grid { order: 2; }

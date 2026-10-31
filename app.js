@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=84";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=85";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -472,7 +472,6 @@ function metaLine(card) {
   if (setName) bits.push(prettyName(setName));
   if (card.localId) bits.push(`n° ${card.localId}`);
   if (card.lang && card.lang !== state.market && MARKETS[card.lang]) bits.push(MARKETS[card.lang].label);
-  if (firstEditionId(card)) bits.push("1re édition");
   if (card.rarity && card.rarity !== "None") bits.push(card.rarity);
   return bits.join(" · ");
 }
@@ -530,7 +529,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=84", location.href));
+    const response = await fetch(new URL("visuels.json?v=85", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -2534,7 +2533,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=84", location.href));
+      const response = await fetch(new URL("univers.json?v=85", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -5043,6 +5042,8 @@ function ficheHTML(card) {
       <div class="fiche-body">
         <p class="kicker">${esc(metaLine(card))}</p>
         <h2>${esc(prettyName(card.name))}</h2>
+        <div class="duo">${duoHTML(card)}</div>
+        ${trendOf(card) >= 0 || bestVariant(card) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
         <div class="identity">
           ${types.map((type) => `<span class="type-pill" style="--c:${typeColor(type)}">${esc(type)}</span>`).join("")}
           ${card.hp ? `<span class="hp">${esc(String(card.hp))} PV</span>` : ""}
@@ -5051,8 +5052,6 @@ function ficheHTML(card) {
         </div>
         ${card.evolveFrom ? `<p class="hint">Évolue de ${esc(card.evolveFrom)}</p>` : ""}
         ${card.description ? `<blockquote class="flavor">${esc(card.description)}</blockquote>` : ""}
-        <div class="duo">${duoHTML(card)}</div>
-        ${trendOf(card) >= 0 || bestVariant(card) ? `<p class="hint">Montant principal : tirage de référence. Le détail distingue les éditions.</p>` : ""}
         ${when ? `<p class="hint">Mise à jour le ${esc(when)}.</p>` : ""}
         ${statsHTML(card)}
         ${variantsHTML(card)}
@@ -5270,7 +5269,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=84", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=85", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));
