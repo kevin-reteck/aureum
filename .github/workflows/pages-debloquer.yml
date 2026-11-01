@@ -1,0 +1,39 @@
+name: Débloquer Pages
+
+# Ne part que lorsque ce fichier change, pour ne pas couper une publication en cours.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/pages-debloquer.yml
+
+permissions:
+  pages: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: pages-debloquer
+  cancel-in-progress: false
+
+jobs:
+  debloquer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Annuler le déploiement coincé, puis relancer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          echo "Déploiements"
+          gh api "repos/${GITHUB_REPOSITORY}/pages/deployments" || true
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/pages/deployments" --jq '.[] | select(.status | test("progress|queued|building|pending|created"; "i")) | .id' || true)
+          echo "À annuler : ${ids:-aucun}"
+          for id in $ids; do
+            echo "Annulation $id"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/deployments/${id}/cancel" || true
+          done
+          sleep 20
+          echo "Demande d'une nouvelle publication"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" || true
+          gh api "repos/${GITHUB_REPOSITORY}/pages/builds" --jq '.[0:3] | .[] | {status,commit:.commit[0:7],error:.error.message}' || true
