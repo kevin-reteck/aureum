@@ -1,4 +1,4 @@
-import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=85";
+import { ecrireCabinet, emailSession, lireCabinet, quitter } from "./comptes.js?v=86";
 
 const CTX_KEY = "aureum.contexte";
 const TABS = ["galerie", "extensions", "etb", "univers", "cotes", "collection", "classeur"];
@@ -529,7 +529,7 @@ function artCandidates(base, size) {
 
 async function loadVisuels() {
   try {
-    const response = await fetch(new URL("visuels.json?v=85", location.href));
+    const response = await fetch(new URL("visuels.json?v=86", location.href));
     if (!response.ok) return;
     const data = await response.json();
     const logos = {};
@@ -581,6 +581,30 @@ function editionArt(card, quality) {
   if (!product) return "";
   const px = quality === "high" ? 1000 : 400;
   return `https://tcgplayer-cdn.tcgplayer.com/product/${product}_in_${px}x${px}.jpg`;
+}
+
+function pastilleEdition(card) {
+  if (!firstEditionId(card)) return "";
+  return `<span class="pastille-edition" role="img" aria-label="1re édition"><span aria-hidden="true">1</span></span>`;
+}
+
+function assurerPastille(root, card) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll("img[data-id]").forEach((img) => {
+    let scan = img.parentElement?.classList.contains("scan") ? img.parentElement : null;
+    if (!scan) {
+      scan = document.createElement("span");
+      scan.className = "scan";
+      img.replaceWith(scan);
+      scan.appendChild(img);
+    }
+    const cur = scan.querySelector(":scope > .pastille-edition");
+    if (firstEditionId(card)) {
+      if (!cur) scan.insertAdjacentHTML("beforeend", pastilleEdition(card));
+    } else if (cur) {
+      cur.remove();
+    }
+  });
 }
 
 function marketArt(card, quality) {
@@ -700,7 +724,7 @@ function imgTag(card, size, eager) {
   if (!urls.length) return `<span class="monogram" data-label="${mark}">${mark}</span>`;
   const [src, ...rest] = urls;
   const charge = eager ? `loading="eager" fetchpriority="high"` : `loading="lazy"`;
-  return `<img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${charge} decoding="async">`;
+  return `<span class="scan"><img src="${esc(src)}" data-fallbacks="${esc(rest.join("|"))}" data-id="${esc(card.id || "")}" data-lang="${esc(card.lang || state.market)}" data-quality="${size === "high" ? "high" : "low"}" alt="${esc(prettyName(card.name))}" ${charge} decoding="async">${pastilleEdition(card)}</span>`;
 }
 
 function logoTag(seriesId, setId) {
@@ -950,6 +974,7 @@ function patchCard(full) {
           wakeScans(art);
         }
       }
+      assurerPastille(node, full);
       return;
     }
     const slot = node.querySelector("[data-slot='price']");
@@ -982,6 +1007,7 @@ function patchCard(full) {
     }
     const meta = node.querySelector("[data-slot='meta']");
     if (meta) meta.textContent = metaLine(full);
+    assurerPastille(node, full);
   });
 }
 
@@ -2533,7 +2559,7 @@ async function loadUnivers() {
   if (state.tab === "univers") render();
   universPromise = (async () => {
     try {
-      const response = await fetch(new URL("univers.json?v=85", location.href));
+      const response = await fetch(new URL("univers.json?v=86", location.href));
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       state.univers = Array.isArray(data.products) ? data.products : [];
@@ -3173,6 +3199,7 @@ async function completerRelief(id, lang) {
       return;
     }
     applyReliefFoil(dialog, card);
+    assurerPastille(dialog, card);
     const name = dialog.querySelector(".relief-name");
     if (name && card.name) name.textContent = prettyName(card.name);
     const prix = dialog.querySelector(".relief-prix");
@@ -5269,7 +5296,7 @@ function chargerCapture() {
   if (typeof window.html2canvas === "function") return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = new URL("vendor/html2canvas.min.js?v=85", location.href).href;
+    script.src = new URL("vendor/html2canvas.min.js?v=86", location.href).href;
     script.onload = () => {
       if (typeof window.html2canvas === "function") resolve(window.html2canvas);
       else reject(new Error("capture"));

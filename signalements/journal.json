@@ -20,7 +20,7 @@
       "text": "Les cote n’apparaissent plus lorsqu’on sélectionne l’items il faut aller voir la fiche",
       "errors": [],
       "image": "20261031-0832-3onc.jpg",
-      "traite": false
+      "traite": true
     },
     {
       "id": "20261031-0812-7yp0",
@@ -31,7 +31,7 @@
       "text": "Bug sur la carte magicarp elle ne s’affiche pas",
       "errors": [],
       "image": "20261031-0812-7yp0.jpg",
-      "traite": false
+      "traite": true
     },
     {
       "id": "20261030-2032-mj8w",
@@ -53,7 +53,7 @@
       "text": "La pastille noir première édition a disparu de la carte",
       "errors": [],
       "image": "20261030-2029-3ywy.jpg",
-      "traite": false
+      "traite": true
     },
     {
       "id": "20261029-1212-bc69",
