@@ -2102,6 +2102,10 @@ html.is-capture, html.is-capture * , html.is-capture *::backdrop {
   color: var(--gold-2);
 }
 .cote-price.is-part { font-size: clamp(1.55rem, 4.4vw, 2.35rem); margin-top: 0.28rem; }
+.cote-price.is-absent {
+  font-size: clamp(1.35rem, 4vw, 1.7rem);
+  line-height: 1.15;
+}
 .cote-price .price-name { font-size: 0.48em; }
 .cote-hero.is-dear .cote-price { text-shadow: none; }
 .cote-wow {
@@ -2113,8 +2117,12 @@ html.is-capture, html.is-capture * , html.is-capture *::backdrop {
 .cote-name { margin: 8px 0 0; font-size: 1.6rem; }
 .cote-ranks .rank-val .price { font-size: 1.25rem; }
 @media (max-width: 720px) {
-  .cote-hero { grid-template-columns: 1fr; }
-  .cote-open .art { max-width: 240px; }
+  .cote-hero { grid-template-columns: 1fr; margin-bottom: 12px; }
+  .cote-hero > div { order: -1; }
+  .cote-hero .cote-wow { font-size: 1.15rem; margin-bottom: 2px; }
+  .cote-hero .cote-name { font-size: 1.3rem; margin-top: 4px; }
+  .cote-hero .note { display: none; }
+  .cote-open .art { max-width: 200px; }
 }
 
 body.locked .top,
