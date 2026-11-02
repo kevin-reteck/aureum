@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=87">
+    <link rel="stylesheet" href="styles.css?v=88">
     <style>html,body{background:#0b0a08}</style>
     <script>
       window.aureumErreurs = [];
@@ -31,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "87";
+      const VERSION_PAGE = "88";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -99,11 +99,11 @@
         <p class="kicker">Cabinet privé</p>
         <h1>Aureum</h1>
         <p class="lede">Ce cabinet est fermé. Le code l'ouvre sur cet appareil.</p>
-        <label class="field" for="porte-code-mot">Code
-          <input id="porte-code-mot" type="password" autocomplete="current-password" enterkeyhint="go" required>
+        <label class="field" for="porte-code-mot">Code du cabinet
+          <input id="porte-code-mot" name="aureum-porte" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" required readonly>
         </label>
         <button class="btn solid" type="submit">Entrer</button>
-        <p class="hint">Dans ce navigateur, il n'est plus redemandé pendant une semaine.</p>
+        <p class="hint">Ce n'est pas le mot de passe du compte. Dans ce navigateur, il n'est plus redemandé pendant une semaine.</p>
         <p class="note" id="porte-code-note" role="alert"></p>
       </form>
       <form class="porte-form" id="porte-entrer" hidden>
@@ -288,6 +288,7 @@
             <li>La fiche affiche d'abord la cote du tirage de référence, visible sur le téléphone.</li>
             <li>Le tampon 1re édition revient sur les cartes du Set de base.</li>
             <li>La salle des cotes ouvre sur les plus chères, toutes pièces confondues, et une pièce sans cote le dit clairement.</li>
+            <li>Le code du cabinet n'est plus rempli avec le mot de passe du compte.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -298,7 +299,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=87";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=88";
 
       const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
       const PORTE_CLE = "aureum.porte";
@@ -347,7 +348,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=87");
+        import("./app.js?v=88");
       }
 
       function fermerPorte() {
@@ -366,13 +367,15 @@
         else fermerPorte();
       } else montrer(codeForm);
 
+      const codePorte = document.getElementById("porte-code-mot");
+      codePorte.addEventListener("focus", () => codePorte.removeAttribute("readonly"));
       codeForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const note = document.getElementById("porte-code-note");
         const input = document.getElementById("porte-code-mot");
         const bouton = codeForm.querySelector("[type=submit]");
         bouton.disabled = true;
-        const hash = await empreinte(input.value);
+        const hash = await empreinte(input.value.normalize("NFC").trim());
         bouton.disabled = false;
         if (hash !== PORTE_HASH) {
           note.textContent = "Code incorrect.";
