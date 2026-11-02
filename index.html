@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;1,9..144,500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=89">
+    <link rel="stylesheet" href="styles.css?v=90">
     <style>html,body{background:#0b0a08}</style>
     <script>
       window.aureumErreurs = [];
@@ -31,7 +31,7 @@
         aureumNoterErreur(raison && raison.message ? raison.message : raison);
       });
 
-      const VERSION_PAGE = "89";
+      const VERSION_PAGE = "90";
       let rechargeEnCours = false;
 
       function saisieEnCours() {
@@ -98,15 +98,12 @@
       <form class="porte-form" id="porte-code">
         <p class="kicker">Cabinet privé</p>
         <h1>Aureum</h1>
-        <p class="lede">Le mot de passe du compte ouvre le cabinet sur cet appareil.</p>
-        <label class="field" for="porte-code-email">Adresse
-          <input id="porte-code-email" name="username" type="email" autocomplete="username" enterkeyhint="next" placeholder="Si l'iPhone la propose">
-        </label>
-        <label class="field" for="porte-code-mot">Mot de passe
-          <input id="porte-code-mot" name="password" type="password" autocomplete="current-password" enterkeyhint="go" required>
+        <p class="lede">Ce cabinet est fermé. Le code l'ouvre sur cet appareil.</p>
+        <label class="field" for="porte-code-mot">Code
+          <input id="porte-code-mot" type="password" autocomplete="current-password" enterkeyhint="go" required>
         </label>
         <button class="btn solid" type="submit">Entrer</button>
-        <p class="hint">Celui enregistré dans l'iPhone convient. Il n'est plus redemandé pendant une semaine.</p>
+        <p class="hint">Dans ce navigateur, il n'est plus redemandé pendant une semaine.</p>
         <p class="note" id="porte-code-note" role="alert"></p>
       </form>
       <form class="porte-form" id="porte-entrer" hidden>
@@ -293,6 +290,7 @@
             <li>La salle des cotes ouvre sur les plus chères, toutes pièces confondues, et une pièce sans cote le dit clairement.</li>
             <li>Le code du cabinet n'est plus rempli avec le mot de passe du compte.</li>
             <li>Le mot de passe du compte, même celui enregistré dans l'iPhone, ouvre le cabinet.</li>
+            <li>La porte du cabinet redevient comme avant.</li>
           </ul>
         </div>
         <div class="journal-bas">
@@ -303,7 +301,7 @@
     <dialog id="fiche" aria-label="Fiche de carte"></dialog>
     <dialog id="relief" aria-label="Carte en relief"></dialog>
     <script type="module">
-      import { aDesOrphelins, preparer, sessionActive, entrer, entrerParMot, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=89";
+      import { aDesOrphelins, preparer, sessionActive, entrer, creer, reinitialiser, motDevOk, fichierComptes } from "./comptes.js?v=90";
 
       const PORTE_HASH = "89e9e5ec5945e92d11915bc11bafad7ce19bef3ce822a4f1412cc771f90ec705";
       const PORTE_CLE = "aureum.porte";
@@ -352,7 +350,7 @@
         document.documentElement.dataset.porte = "ok";
         document.body.classList.remove("locked");
         porte.hidden = true;
-        import("./app.js?v=89");
+        import("./app.js?v=90");
       }
 
       function fermerPorte() {
@@ -375,47 +373,20 @@
         event.preventDefault();
         const note = document.getElementById("porte-code-note");
         const input = document.getElementById("porte-code-mot");
-        const email = document.getElementById("porte-code-email");
         const bouton = codeForm.querySelector("[type=submit]");
-        const mot = input.value.normalize("NFC").trim();
         bouton.disabled = true;
-        const hash = await empreinte(mot);
-        if (hash === PORTE_HASH) {
-          bouton.disabled = false;
-          input.value = "";
-          email.value = "";
-          retenirPorte();
-          if (sessionActive()) ouvrirCabinet();
-          else fermerPorte();
-          return;
-        }
-        const resultat = email.value.trim()
-          ? await entrer(email.value, mot)
-          : await entrerParMot(mot);
+        const hash = await empreinte(input.value);
         bouton.disabled = false;
-        if (!resultat.ok && resultat.code === "plusieurs") {
-          document.getElementById("porte-mot").value = mot;
-          montrer(entrerForm);
-          document.getElementById("porte-note").textContent = "Plusieurs comptes ont ce mot de passe. Indique l'adresse.";
-          document.getElementById("porte-email").focus();
-          return;
-        }
-        if (!resultat.ok && resultat.code === "stockage") {
-          note.textContent = "Le navigateur refuse d'enregistrer la session.";
-          return;
-        }
-        if (!resultat.ok) {
-          note.textContent = email.value.trim()
-            ? "Adresse ou mot de passe incorrect."
-            : "Mot de passe non reconnu sur cet appareil.";
+        if (hash !== PORTE_HASH) {
+          note.textContent = "Code incorrect.";
           input.value = "";
           input.focus();
           return;
         }
         input.value = "";
-        email.value = "";
         retenirPorte();
-        ouvrirCabinet();
+        if (sessionActive()) ouvrirCabinet();
+        else fermerPorte();
       });
 
       document.getElementById("porte-vers-creer").addEventListener("click", () => {

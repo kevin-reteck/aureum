@@ -151,7 +151,7 @@ export async function preparer() {
   const sauvee = emailPropre(localStorage.getItem(SESSION_KEY) || "");
   session = sauvee && comptes.users[sauvee] ? sauvee : "";
   try {
-    const reponse = await fetch(new URL("comptes.json?v=89", location.href));
+    const reponse = await fetch(new URL("comptes.json?v=90", location.href));
     if (reponse.ok) fusionner(await reponse.json());
   } catch {
     /* L'appareil garde sa copie si le fichier n'est pas joignable. */
@@ -224,26 +224,6 @@ export async function creer(email, mot) {
   }
   localStorage.setItem(MIGRE_KEY, "1");
   return { ok: true };
-}
-
-export async function entrerParMot(mot) {
-  const texte = String(mot || "").normalize("NFC").trim();
-  if (!texte) return { ok: false, code: "mauvais" };
-  const trouves = [];
-  for (const [email, compte] of Object.entries(comptes.users)) {
-    if (!compteValide(compte)) continue;
-    const secret = await deriver(texte, compte.salt, Number(compte.iterations) || ITERATIONS);
-    if (pareil(secret.hash, compte.hash)) trouves.push(email);
-  }
-  if (trouves.length !== 1) return { ok: false, code: trouves.length > 1 ? "plusieurs" : "mauvais" };
-  session = trouves[0];
-  try {
-    ecrireDisque();
-  } catch {
-    session = "";
-    return { ok: false, code: "stockage" };
-  }
-  return { ok: true, email: trouves[0] };
 }
 
 export async function entrer(email, mot) {
