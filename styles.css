@@ -2160,10 +2160,6 @@ html[data-porte="ok"] .skip { display: block !important; }
   background: var(--gold);
 }
 .porte-form h1 { font-size: clamp(2.7rem, 9vw, 3.5rem); }
-#porte-code-mot {
-  -webkit-text-security: disc;
-  text-security: disc;
-}
 .porte-form input {
   width: 100%;
   margin-top: 6px;
